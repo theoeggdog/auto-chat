@@ -1,0 +1,200 @@
+--[[ 
+    ADVANCED RENDER MANAGER
+    - Toggle Button to Stop/Start 3D Rendering
+    - Draggable Modern UI (Matches previous style)
+    - Anti-Softlock (Fallback to Black Screen if API missing)
+    - Client-Side LocalScript
+]]
+
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Configuration
+local UI_TOGGLE_KEY = Enum.KeyCode.RightControl
+
+-- State Variables
+local renderingEnabled = true
+local isBlindMode = false -- Fallback state
+
+--------------------------------------------------------------------------------
+-- GUI CREATION
+--------------------------------------------------------------------------------
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "RenderManagerGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+-- Try to parent to CoreGui, fallback to PlayerGui
+pcall(function() ScreenGui.Parent = CoreGui end)
+if not ScreenGui.Parent then ScreenGui.Parent = PlayerGui end
+
+-- Main Window
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+MainFrame.BorderSizePixel = 0
+MainFrame.Position = UDim2.new(0.5, -125, 0.5, -100) -- Centered
+MainFrame.Size = UDim2.new(0, 250, 0, 200)
+MainFrame.Parent = ScreenGui
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 10)
+UICorner.Parent = MainFrame
+
+local UIStroke = Instance.new("UIStroke")
+UIStroke.Color = Color3.fromRGB(50, 50, 50)
+UIStroke.Thickness = 2
+UIStroke.Parent = MainFrame
+
+-- Header
+local HeaderLabel = Instance.new("TextLabel")
+HeaderLabel.BackgroundTransparency = 1
+HeaderLabel.Size = UDim2.new(1, 0, 0, 40)
+HeaderLabel.Font = Enum.Font.GothamBold
+HeaderLabel.Text = "RENDER MANAGER"
+HeaderLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+HeaderLabel.TextSize = 16
+HeaderLabel.Parent = MainFrame
+
+-- Divider
+local Divider = Instance.new("Frame")
+Divider.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+Divider.BorderSizePixel = 0
+Divider.Position = UDim2.new(0, 20, 0, 40)
+Divider.Size = UDim2.new(1, -40, 0, 1)
+Divider.Parent = MainFrame
+
+-- Status Text
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.Position = UDim2.new(0, 0, 0.3, 0)
+StatusLabel.Size = UDim2.new(1, 0, 0, 20)
+StatusLabel.Font = Enum.Font.GothamMedium
+StatusLabel.Text = "Rendering is: ON"
+StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 150) -- Green
+StatusLabel.TextSize = 14
+StatusLabel.Parent = MainFrame
+
+-- Toggle Button
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50) -- Start Red (to stop)
+ToggleBtn.Position = UDim2.new(0.1, 0, 0.5, 0)
+ToggleBtn.Size = UDim2.new(0.8, 0, 0, 40)
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.Text = "DISABLE RENDERING"
+ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleBtn.TextSize = 14
+ToggleBtn.Parent = MainFrame
+
+local BtnCorner = Instance.new("UICorner")
+BtnCorner.CornerRadius = UDim.new(0, 6)
+BtnCorner.Parent = ToggleBtn
+
+-- Footer
+local FooterLabel = Instance.new("TextLabel")
+FooterLabel.BackgroundTransparency = 1
+FooterLabel.Position = UDim2.new(0, 0, 0.85, 0)
+FooterLabel.Size = UDim2.new(1, 0, 0, 20)
+FooterLabel.Font = Enum.Font.Gotham
+FooterLabel.Text = "Press RightCtrl to Hide"
+FooterLabel.TextColor3 = Color3.fromRGB(100, 100, 100)
+FooterLabel.TextSize = 11
+FooterLabel.Parent = MainFrame
+
+-- BLIND MODE OVERLAY (Fallback)
+local BlindFrame = Instance.new("Frame")
+BlindFrame.Name = "BlindFrame"
+BlindFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+BlindFrame.Size = UDim2.new(10, 0, 10, 0) -- Cover everything
+BlindFrame.Position = UDim2.new(-5, 0, -5, 0)
+BlindFrame.ZIndex = 99999 -- On top of everything
+BlindFrame.Visible = false
+BlindFrame.Parent = ScreenGui
+
+--------------------------------------------------------------------------------
+-- DRAGGABLE LOGIC
+--------------------------------------------------------------------------------
+local dragging, dragInput, dragStart, startPos
+local function update(input)
+    local delta = input.Position - dragStart
+    MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+MainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+    end
+end)
+MainFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
+end)
+UserInputService.InputChanged:Connect(function(input) if input == dragInput and dragging then update(input) end end)
+
+--------------------------------------------------------------------------------
+-- RENDER TOGGLE LOGIC
+--------------------------------------------------------------------------------
+
+local function updateUI()
+    if renderingEnabled then
+        StatusLabel.Text = "Rendering is: ON"
+        StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
+        ToggleBtn.Text = "DISABLE RENDERING"
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50) -- Red
+    else
+        StatusLabel.Text = "Rendering is: OFF"
+        StatusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+        ToggleBtn.Text = "ENABLE RENDERING"
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 100) -- Green
+    end
+end
+
+local function toggleRender()
+    renderingEnabled = not renderingEnabled
+    
+    -- Attempt to use RunService:Set3dRenderingEnabled
+    local success, err = pcall(function()
+        RunService:Set3dRenderingEnabled(renderingEnabled)
+    end)
+    
+    if not success then
+        -- FALLBACK: If API doesn't exist (Vanilla Roblox), use Blind Mode
+        isBlindMode = not renderingEnabled
+        BlindFrame.Visible = isBlindMode
+        
+        if isBlindMode then
+            -- Optional: Reduce quality manually for fallback
+            warn("Set3dRenderingEnabled not supported. Using Overlay mode.")
+        end
+    else
+        -- Ensure BlindFrame is off if the API worked
+        BlindFrame.Visible = false
+    end
+    
+    updateUI()
+end
+
+ToggleBtn.MouseButton1Click:Connect(toggleRender)
+
+--------------------------------------------------------------------------------
+-- KEYBIND & CLEANUP
+--------------------------------------------------------------------------------
+
+UserInputService.InputBegan:Connect(function(input, gp)
+    if input.KeyCode == UI_TOGGLE_KEY then
+        MainFrame.Visible = not MainFrame.Visible
+    end
+end)
+
+script.Destroying:Connect(function()
+    -- Safety: Re-enable rendering if script is deleted
+    pcall(function() RunService:Set3dRenderingEnabled(true) end)
+    ScreenGui:Destroy()
+end)
