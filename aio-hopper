@@ -1,0 +1,211 @@
+--[[ 
+    SERVER MANAGER & TIMER (AUTO-HOP + RESET)
+    - Auto-Executes the 'Claimer' loadstring on start
+    - 15 Minute Countdown
+    - Resets timer if Chat detects "donated", "tipped" + numbers
+    - Server Hops if timer hits 0
+    - Place in AUTO-EXECUTE folder!
+]]
+
+local Players = game:GetService("Players")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+local TextChatService = game:GetService("TextChatService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CoreGui = game:GetService("CoreGui")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Configuration
+local GAME_ID = 8737602449
+local TIME_LIMIT_MINUTES = 15
+local ADD_TIME_ON_DONATION = 15 -- Minutes to add
+local CLAIMER_SCRIPT = "https://raw.githubusercontent.com/theoeggdog/auto-chat/refs/heads/main/autoclaimer-executor"
+
+-- State
+local timeLeft = TIME_LIMIT_MINUTES * 60
+local isHopping = false
+
+--------------------------------------------------------------------------------
+-- 1. EXECUTE THE CLAIMER (Immediately)
+--------------------------------------------------------------------------------
+task.spawn(function()
+    pcall(function()
+        loadstring(game:HttpGet(CLAIMER_SCRIPT))()
+    end)
+end)
+
+--------------------------------------------------------------------------------
+-- 2. GUI CREATION
+--------------------------------------------------------------------------------
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "ServerManagerGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+pcall(function() ScreenGui.Parent = CoreGui end)
+if not ScreenGui.Parent then ScreenGui.Parent = PlayerGui end
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+MainFrame.BorderSizePixel = 0
+MainFrame.Position = UDim2.new(0.85, 0, 0.85, 0) -- Bottom Right
+MainFrame.Size = UDim2.new(0, 200, 0, 80)
+MainFrame.Parent = ScreenGui
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.Parent = MainFrame
+
+local UIStroke = Instance.new("UIStroke")
+UIStroke.Color = Color3.fromRGB(50, 50, 50)
+UIStroke.Thickness = 2
+UIStroke.Parent = MainFrame
+
+local Title = Instance.new("TextLabel")
+Title.BackgroundTransparency = 1
+Title.Position = UDim2.new(0, 0, 0, 5)
+Title.Size = UDim2.new(1, 0, 0, 20)
+Title.Font = Enum.Font.GothamBold
+Title.Text = "SERVER MANAGER"
+Title.TextColor3 = Color3.fromRGB(150, 150, 150)
+Title.TextSize = 12
+Title.Parent = MainFrame
+
+local TimerLabel = Instance.new("TextLabel")
+TimerLabel.BackgroundTransparency = 1
+TimerLabel.Position = UDim2.new(0, 0, 0.35, 0)
+TimerLabel.Size = UDim2.new(1, 0, 0, 30)
+TimerLabel.Font = Enum.Font.GothamBold
+TimerLabel.Text = "15:00"
+TimerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TimerLabel.TextSize = 24
+TimerLabel.Parent = MainFrame
+
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.Position = UDim2.new(0, 0, 0.7, 0)
+StatusLabel.Size = UDim2.new(1, 0, 0, 20)
+StatusLabel.Font = Enum.Font.Gotham
+StatusLabel.Text = "Waiting for donations..."
+StatusLabel.TextColor3 = Color3.fromRGB(100, 100, 100)
+StatusLabel.TextSize = 11
+StatusLabel.Parent = MainFrame
+
+--------------------------------------------------------------------------------
+-- 3. SERVER HOP LOGIC
+--------------------------------------------------------------------------------
+local function serverHop()
+    if isHopping then return end
+    isHopping = true
+    
+    StatusLabel.Text = "HOPPING SERVERS..."
+    StatusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+    
+    -- API Request to get servers
+    local success, result = pcall(function()
+        return HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/".. GAME_ID .."/servers/Public?sortOrder=Desc&limit=100"))
+    end)
+    
+    if success and result and result.data then
+        -- Find a suitable server (Not full, Not current)
+        local candidates = {}
+        for _, server in pairs(result.data) do
+            if server.playing < server.maxPlayers and server.id ~= game.JobId then
+                table.insert(candidates, server.id)
+            end
+        end
+        
+        if #candidates > 0 then
+            -- Pick random to avoid collision
+            local targetId = candidates[math.random(1, #candidates)]
+            TeleportService:TeleportToPlaceInstance(GAME_ID, targetId, LocalPlayer)
+        else
+            StatusLabel.Text = "No servers found, retrying..."
+            isHopping = false
+        end
+    else
+        -- Fallback if HTTP fails
+        StatusLabel.Text = "HTTP Failed. Random Hop."
+        TeleportService:Teleport(GAME_ID, LocalPlayer)
+    end
+end
+
+--------------------------------------------------------------------------------
+-- 4. CHAT SCANNER (RESET LOGIC)
+--------------------------------------------------------------------------------
+local function resetTimer()
+    timeLeft = timeLeft + (ADD_TIME_ON_DONATION * 60)
+    
+    -- Visual Feedback
+    local originalColor = MainFrame.BackgroundColor3
+    MainFrame.BackgroundColor3 = Color3.fromRGB(0, 100, 50) -- Flash Green
+    StatusLabel.Text = "DONATION DETECTED! +15 MIN"
+    StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
+    
+    task.delay(1, function()
+        MainFrame.BackgroundColor3 = originalColor
+        StatusLabel.Text = "Timer Extended."
+        StatusLabel.TextColor3 = Color3.fromRGB(100, 100, 100)
+    end)
+end
+
+local function processChat(msg)
+    local lowerMsg = msg:lower()
+    
+    -- Check for keywords AND numbers
+    if (lowerMsg:find("donated") or lowerMsg:find("tipped")) and lowerMsg:find("%d") then
+        resetTimer()
+    end
+end
+
+-- Chat Listeners
+if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+    TextChatService.MessageReceived:Connect(function(data)
+        processChat(data.Text)
+    end)
+else
+    local ChatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+    if ChatEvents then
+        local OnMessage = ChatEvents:FindFirstChild("OnMessageDoneFiltering")
+        if OnMessage then
+            OnMessage.OnClientEvent:Connect(function(data)
+                if data and data.Message then processChat(data.Message) end
+            end)
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
+-- 5. COUNTDOWN LOOP
+--------------------------------------------------------------------------------
+task.spawn(function()
+    while true do
+        if not isHopping then
+            timeLeft = timeLeft - 1
+            
+            -- Update UI Format MM:SS
+            local minutes = math.floor(timeLeft / 60)
+            local seconds = timeLeft % 60
+            TimerLabel.Text = string.format("%02d:%02d", minutes, seconds)
+            
+            -- Warning Colors
+            if timeLeft < 60 then
+                TimerLabel.TextColor3 = Color3.fromRGB(255, 50, 50) -- Red
+            elseif timeLeft < 300 then
+                TimerLabel.TextColor3 = Color3.fromRGB(255, 170, 0) -- Orange
+            else
+                TimerLabel.TextColor3 = Color3.fromRGB(255, 255, 255) -- White
+            end
+            
+            -- Hop Check
+            if timeLeft <= 0 then
+                serverHop()
+            end
+        end
+        task.wait(1)
+    end
+end)
