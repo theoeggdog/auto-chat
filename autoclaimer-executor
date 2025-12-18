@@ -1,10 +1,9 @@
 --[[ 
-    FINAL BOOTH CLAIMER (PAYLOAD EDITION)
+    FINAL BOOTH CLAIMER (PERSISTENT PAYLOAD FIX)
     - Teleports -> Simulates 'E' -> Checks Logs
     - On Success:
       1. Executes your 3 external scripts
-      2. Unloads UI
-      3. Destroys itself
+      2. Destroys the UI ONLY (Keeps script alive so payloads don't crash)
     - Client-Side Only
 ]]
 
@@ -124,19 +123,25 @@ local function executePayloads()
     StatusLabel.Text = "EXECUTING SCRIPTS..."
     DebugLabel.Text = "Loading external scripts..."
     
-    -- Using pcall to ensure one failure doesn't stop the rest
-    pcall(function() 
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/theoeggdog/auto-chat/refs/heads/main/hardcoded-chat"))() 
+    -- Executing scripts safely
+    task.spawn(function()
+        pcall(function() 
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/theoeggdog/auto-chat/refs/heads/main/hardcoded-chat"))() 
+        end)
     end)
-    task.wait(0.1)
+    task.wait(0.2)
     
-    pcall(function() 
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/theoeggdog/auto-chat/refs/heads/main/script1"))() 
+    task.spawn(function()
+        pcall(function() 
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/theoeggdog/auto-chat/refs/heads/main/script1"))() 
+        end)
     end)
-    task.wait(0.1)
+    task.wait(0.2)
     
-    pcall(function() 
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/theoeggdog/auto-chat/refs/heads/main/script2"))() 
+    task.spawn(function()
+        pcall(function() 
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/theoeggdog/auto-chat/refs/heads/main/script2"))() 
+        end)
     end)
 end
 
@@ -151,11 +156,11 @@ local function onSuccess()
     -- 2. Execute Scripts
     executePayloads()
     
-    -- 3. Cleanup & Self Destruct
-    DebugLabel.Text = "Done. Unloading UI..."
-    task.delay(2, function()
+    -- 3. Cleanup UI ONLY (Keep script alive for payloads)
+    DebugLabel.Text = "Done. Hiding UI..."
+    task.delay(1.5, function()
         if ScreenGui then ScreenGui:Destroy() end
-        if script then script:Destroy() end
+        -- NOTE: We do NOT destroy the script here, so the loaded strings stay alive.
     end)
 end
 
