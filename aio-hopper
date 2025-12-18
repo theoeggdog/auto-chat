@@ -1,8 +1,8 @@
 --[[ 
-    SERVER MANAGER & TIMER (AUTO-HOP + RESET)
-    - Auto-Executes the 'Claimer' loadstring on start
+    SERVER MANAGER & TIMER (STRICT EDITION)
+    - Auto-Executes the 'Claimer' loadstring
     - 15 Minute Countdown
-    - Resets timer if Chat detects "donated", "tipped" + numbers
+    - Resets timer ONLY if 'theosbot_2' gets a donation
     - Server Hops if timer hits 0
     - Place in AUTO-EXECUTE folder!
 ]]
@@ -13,12 +13,12 @@ local HttpService = game:GetService("HttpService")
 local TextChatService = game:GetService("TextChatService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CoreGui = game:GetService("CoreGui")
-local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 -- Configuration
+local TARGET_USER = "theosbot_2" -- Only reset if this user is mentioned
 local GAME_ID = 8737602449
 local TIME_LIMIT_MINUTES = 15
 local ADD_TIME_ON_DONATION = 15 -- Minutes to add
@@ -41,7 +41,7 @@ end)
 -- 2. GUI CREATION
 --------------------------------------------------------------------------------
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "ServerManagerGUI"
+ScreenGui.Name = "ServerManagerGUI_V2"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
@@ -90,7 +90,7 @@ StatusLabel.BackgroundTransparency = 1
 StatusLabel.Position = UDim2.new(0, 0, 0.7, 0)
 StatusLabel.Size = UDim2.new(1, 0, 0, 20)
 StatusLabel.Font = Enum.Font.Gotham
-StatusLabel.Text = "Waiting for donations..."
+StatusLabel.Text = "Watching: @" .. TARGET_USER
 StatusLabel.TextColor3 = Color3.fromRGB(100, 100, 100)
 StatusLabel.TextSize = 11
 StatusLabel.Parent = MainFrame
@@ -111,7 +111,6 @@ local function serverHop()
     end)
     
     if success and result and result.data then
-        -- Find a suitable server (Not full, Not current)
         local candidates = {}
         for _, server in pairs(result.data) do
             if server.playing < server.maxPlayers and server.id ~= game.JobId then
@@ -120,7 +119,6 @@ local function serverHop()
         end
         
         if #candidates > 0 then
-            -- Pick random to avoid collision
             local targetId = candidates[math.random(1, #candidates)]
             TeleportService:TeleportToPlaceInstance(GAME_ID, targetId, LocalPlayer)
         else
@@ -128,27 +126,25 @@ local function serverHop()
             isHopping = false
         end
     else
-        -- Fallback if HTTP fails
         StatusLabel.Text = "HTTP Failed. Random Hop."
         TeleportService:Teleport(GAME_ID, LocalPlayer)
     end
 end
 
 --------------------------------------------------------------------------------
--- 4. CHAT SCANNER (RESET LOGIC)
+-- 4. STRICT CHAT SCANNER (The Fix)
 --------------------------------------------------------------------------------
 local function resetTimer()
     timeLeft = timeLeft + (ADD_TIME_ON_DONATION * 60)
     
-    -- Visual Feedback
     local originalColor = MainFrame.BackgroundColor3
     MainFrame.BackgroundColor3 = Color3.fromRGB(0, 100, 50) -- Flash Green
-    StatusLabel.Text = "DONATION DETECTED! +15 MIN"
+    StatusLabel.Text = "DONATION DETECTED!"
     StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
     
     task.delay(1, function()
         MainFrame.BackgroundColor3 = originalColor
-        StatusLabel.Text = "Timer Extended."
+        StatusLabel.Text = "Watching: @" .. TARGET_USER
         StatusLabel.TextColor3 = Color3.fromRGB(100, 100, 100)
     end)
 end
@@ -156,9 +152,15 @@ end
 local function processChat(msg)
     local lowerMsg = msg:lower()
     
-    -- Check for keywords AND numbers
-    if (lowerMsg:find("donated") or lowerMsg:find("tipped")) and lowerMsg:find("%d") then
-        resetTimer()
+    -- 1. Check if OUR username is in the message
+    if not lowerMsg:find(TARGET_USER) then return end
+    
+    -- 2. Check for donation keywords
+    if lowerMsg:find("donated") or lowerMsg:find("tipped") then
+        -- 3. Check for numbers (implicit in donation msgs usually, but safe to check)
+        if lowerMsg:find("%d") then
+            resetTimer()
+        end
     end
 end
 
@@ -187,21 +189,18 @@ task.spawn(function()
         if not isHopping then
             timeLeft = timeLeft - 1
             
-            -- Update UI Format MM:SS
             local minutes = math.floor(timeLeft / 60)
             local seconds = timeLeft % 60
             TimerLabel.Text = string.format("%02d:%02d", minutes, seconds)
             
-            -- Warning Colors
             if timeLeft < 60 then
-                TimerLabel.TextColor3 = Color3.fromRGB(255, 50, 50) -- Red
+                TimerLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
             elseif timeLeft < 300 then
-                TimerLabel.TextColor3 = Color3.fromRGB(255, 170, 0) -- Orange
+                TimerLabel.TextColor3 = Color3.fromRGB(255, 170, 0)
             else
-                TimerLabel.TextColor3 = Color3.fromRGB(255, 255, 255) -- White
+                TimerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
             end
             
-            -- Hop Check
             if timeLeft <= 0 then
                 serverHop()
             end
