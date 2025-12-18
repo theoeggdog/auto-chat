@@ -1,9 +1,8 @@
 --[[ 
-    FINAL BOOTH CLAIMER (PERSISTENT PAYLOAD FIX)
-    - Teleports -> Simulates 'E' -> Checks Logs
-    - On Success:
-      1. Executes your 3 external scripts
-      2. Destroys the UI ONLY (Keeps script alive so payloads don't crash)
+    FINAL BOOTH CLAIMER (ELEVATION CHECK EDITION)
+    - Teleports -> Checks Y-Level -> Simulates 'E' -> Checks Logs
+    - Skips booth if Player Y < 2 or Y > 15 (Void/Glitch check)
+    - On Success: Executes payloads -> Destroys UI (Keeps script alive)
     - Client-Side Only
 ]]
 
@@ -31,7 +30,7 @@ local boothFound = false
 --------------------------------------------------------------------------------
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "AutoBoothPayload"
+ScreenGui.Name = "AutoBoothFinal_V6"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = PlayerGui
@@ -40,8 +39,8 @@ local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 MainFrame.BorderSizePixel = 0
-MainFrame.Position = UDim2.new(0.5, -140, 0.5, -110)
-MainFrame.Size = UDim2.new(0, 280, 0, 240)
+MainFrame.Position = UDim2.new(0.5, -140, 0.5, -120)
+MainFrame.Size = UDim2.new(0, 280, 0, 260)
 MainFrame.Parent = ScreenGui
 
 local UICorner = Instance.new("UICorner")
@@ -57,14 +56,14 @@ local Title = Instance.new("TextLabel")
 Title.BackgroundTransparency = 1
 Title.Size = UDim2.new(1, 0, 0, 30)
 Title.Font = Enum.Font.GothamBold
-Title.Text = "AUTO CLAIMER + LOAD"
+Title.Text = "AUTO CLAIMER + CHECK"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.TextSize = 16
 Title.Parent = MainFrame
 
 local StatusLabel = Instance.new("TextLabel")
 StatusLabel.BackgroundTransparency = 1
-StatusLabel.Position = UDim2.new(0, 0, 0.2, 0)
+StatusLabel.Position = UDim2.new(0, 0, 0.15, 0)
 StatusLabel.Size = UDim2.new(1, 0, 0, 25)
 StatusLabel.Font = Enum.Font.GothamBold
 StatusLabel.Text = "SEARCHING..."
@@ -74,7 +73,7 @@ StatusLabel.Parent = MainFrame
 
 local DebugLabel = Instance.new("TextLabel")
 DebugLabel.BackgroundTransparency = 1
-DebugLabel.Position = UDim2.new(0, 10, 0.4, 0)
+DebugLabel.Position = UDim2.new(0, 10, 0.35, 0)
 DebugLabel.Size = UDim2.new(1, -20, 0, 50)
 DebugLabel.Font = Enum.Font.Code
 DebugLabel.Text = "Initializing..."
@@ -86,7 +85,7 @@ DebugLabel.Parent = MainFrame
 
 local StopBtn = Instance.new("TextButton")
 StopBtn.BackgroundColor3 = Color3.fromRGB(170, 50, 50)
-StopBtn.Position = UDim2.new(0.1, 0, 0.82, 0)
+StopBtn.Position = UDim2.new(0.1, 0, 0.8, 0)
 StopBtn.Size = UDim2.new(0.8, 0, 0, 35)
 StopBtn.Font = Enum.Font.GothamBold
 StopBtn.Text = "STOP SEARCH"
@@ -123,7 +122,6 @@ local function executePayloads()
     StatusLabel.Text = "EXECUTING SCRIPTS..."
     DebugLabel.Text = "Loading external scripts..."
     
-    -- Executing scripts safely
     task.spawn(function()
         pcall(function() 
             loadstring(game:HttpGet("https://raw.githubusercontent.com/theoeggdog/auto-chat/refs/heads/main/hardcoded-chat"))() 
@@ -149,18 +147,15 @@ local function onSuccess()
     boothFound = true
     isSearching = false
     
-    -- 1. Visual Update
     StatusLabel.Text = "CLAIMED!"
     StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
     
-    -- 2. Execute Scripts
     executePayloads()
     
-    -- 3. Cleanup UI ONLY (Keep script alive for payloads)
-    DebugLabel.Text = "Done. Hiding UI..."
+    DebugLabel.Text = "Success! Hiding UI..."
     task.delay(1.5, function()
         if ScreenGui then ScreenGui:Destroy() end
-        -- NOTE: We do NOT destroy the script here, so the loaded strings stay alive.
+        -- NOTE: Script remains alive to support the loaded payloads
     end)
 end
 
@@ -188,12 +183,10 @@ local function simulateKeyPress(duration)
     
     StatusLabel.Text = "PRESSING E..."
     
-    -- Press Key Down
     pcall(function()
         VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
     end)
 
-    -- Wait Loop
     local elapsed = 0
     while elapsed < duration do
         if not isSearching then break end
@@ -201,7 +194,6 @@ local function simulateKeyPress(duration)
         elapsed = elapsed + 0.1
     end
 
-    -- Release Key Up
     pcall(function()
         VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
     end)
@@ -240,25 +232,37 @@ task.spawn(function()
                     
                     if hrp then
                         StatusLabel.Text = "TP: " .. randomBooth.Name
-                        DebugLabel.Text = "Moved. Simulating Input..."
+                        DebugLabel.Text = "Moved. Checking height..."
                         
-                        -- Teleport
+                        -- 1. Teleport
                         hrp.CFrame = targetCFrame
                         hrp.Velocity = Vector3.zero
-                        task.wait(0.5) -- Stabilize
+                        task.wait(0.5) -- Stabilize to get accurate Y check
                         
-                        -- Visual Helper
-                        local prompt = randomBooth:FindFirstChildWhichIsA("ProximityPrompt", true)
-                        if prompt then prompt:InputHoldBegin() end
+                        -- 2. ELEVATION CHECK (New Feature)
+                        local currentY = hrp.Position.Y
                         
-                        -- Blind Input
-                        simulateKeyPress(HOLD_DURATION)
-                        
-                        -- Release Helper
-                        if prompt then prompt:InputHoldEnd() end
-                        
-                        StatusLabel.Text = "Checking..."
-                        task.wait(SEARCH_DELAY)
+                        -- Check if OUTSIDE valid range (2 to 15)
+                        if currentY < 2 or currentY > 15 then
+                            StatusLabel.Text = "SKIP: BAD HEIGHT"
+                            DebugLabel.Text = "Skipped. Y=" .. math.floor(currentY) .. " (Unsafe)"
+                            task.wait(0.2) -- Quick skip
+                        else
+                            -- Height is GOOD (Between 2 and 15) -> Proceed
+                            
+                            -- Visual Helper
+                            local prompt = randomBooth:FindFirstChildWhichIsA("ProximityPrompt", true)
+                            if prompt then prompt:InputHoldBegin() end
+                            
+                            -- Blind Input
+                            simulateKeyPress(HOLD_DURATION)
+                            
+                            -- Release Helper
+                            if prompt then prompt:InputHoldEnd() end
+                            
+                            StatusLabel.Text = "Checking Logs..."
+                            task.wait(SEARCH_DELAY)
+                        end
                     end
                 else
                     DebugLabel.Text = "Skipped: Invalid CFrame"
