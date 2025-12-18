@@ -1,0 +1,364 @@
+--[[ 
+    ADVANCED OMNI-TOOL (Chatter + Spinner)
+    - Client-Side Only (LocalScript)
+    - Draggable Modern UI
+    - Anti-Softlock
+    - Supports TextChatService & Legacy Chat
+    - Spin Logic with Purchase Detection
+]]
+
+local Players = game:GetService("Players")
+local CoreGui = game:GetService("CoreGui")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TextChatService = game:GetService("TextChatService")
+local MarketplaceService = game:GetService("MarketplaceService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Configuration
+local UI_TOGGLE_KEY = Enum.KeyCode.RightControl
+local MIN_DELAY = 0.5
+
+-- GamePass/Product IDs
+local GP_ID_3_ROBUX = 1636005304
+local GP_ID_5_ROBUX = 1636041157
+
+-- State Variables
+local isChatting = false
+local chatLoopTask = nil
+local chatIndex = 1
+
+local spinSpeed = 1 -- Default speed
+local isSpinning = true -- Always active by default as requested
+
+--------------------------------------------------------------------------------
+-- GUI CREATION
+--------------------------------------------------------------------------------
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "OmniToolGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+pcall(function() ScreenGui.Parent = CoreGui end)
+if not ScreenGui.Parent then ScreenGui.Parent = PlayerGui end
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+MainFrame.BorderSizePixel = 0
+MainFrame.Position = UDim2.new(0.5, -160, 0.5, -200)
+MainFrame.Size = UDim2.new(0, 320, 0, 420) -- Taller to fit new controls
+MainFrame.Parent = ScreenGui
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 10)
+UICorner.Parent = MainFrame
+
+local UIStroke = Instance.new("UIStroke")
+UIStroke.Color = Color3.fromRGB(50, 50, 50)
+UIStroke.Thickness = 2
+UIStroke.Parent = MainFrame
+
+-- Header
+local Header = Instance.new("Frame")
+Header.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+Header.Size = UDim2.new(1, 0, 0, 40)
+Header.BorderSizePixel = 0
+Header.Parent = MainFrame
+
+local HeaderCorner = Instance.new("UICorner")
+HeaderCorner.CornerRadius = UDim.new(0, 10)
+HeaderCorner.Parent = Header
+
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Size = UDim2.new(1, 0, 1, 0)
+TitleLabel.Font = Enum.Font.GothamBold
+TitleLabel.Text = "Omni-Tool // V2"
+TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleLabel.TextSize = 18
+TitleLabel.Parent = Header
+
+-- Fix corner clipping for header
+local HeaderCover = Instance.new("Frame")
+HeaderCover.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+HeaderCover.BorderSizePixel = 0
+HeaderCover.Position = UDim2.new(0, 0, 1, -5)
+HeaderCover.Size = UDim2.new(1, 0, 0, 5)
+HeaderCover.Parent = Header
+
+--------------------------------------------------------------------------------
+-- AUTO CHATTER SECTION
+--------------------------------------------------------------------------------
+
+local SectionLabel1 = Instance.new("TextLabel")
+SectionLabel1.BackgroundTransparency = 1
+SectionLabel1.Position = UDim2.new(0, 15, 0, 50)
+SectionLabel1.Size = UDim2.new(1, -30, 0, 20)
+SectionLabel1.Font = Enum.Font.GothamBold
+SectionLabel1.Text = "AUTO CHATTER"
+SectionLabel1.TextColor3 = Color3.fromRGB(180, 180, 180)
+SectionLabel1.TextXAlignment = Enum.TextXAlignment.Left
+SectionLabel1.TextSize = 12
+SectionLabel1.Parent = MainFrame
+
+local PhraseBox = Instance.new("TextBox")
+PhraseBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+PhraseBox.Position = UDim2.new(0.05, 0, 0, 75)
+PhraseBox.Size = UDim2.new(0.9, 0, 0, 100)
+PhraseBox.Font = Enum.Font.Gotham
+PhraseBox.PlaceholderText = "Phrases (one per line)..."
+PhraseBox.Text = ""
+PhraseBox.TextColor3 = Color3.fromRGB(220, 220, 220)
+PhraseBox.TextSize = 14
+PhraseBox.TextXAlignment = Enum.TextXAlignment.Left
+PhraseBox.TextYAlignment = Enum.TextYAlignment.Top
+PhraseBox.ClearTextOnFocus = false
+PhraseBox.MultiLine = true
+PhraseBox.Parent = MainFrame
+
+local BoxCorner = Instance.new("UICorner")
+BoxCorner.CornerRadius = UDim.new(0, 6)
+BoxCorner.Parent = PhraseBox
+
+local IntervalBox = Instance.new("TextBox")
+IntervalBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+IntervalBox.Position = UDim2.new(0.05, 0, 0, 185)
+IntervalBox.Size = UDim2.new(0.4, 0, 0, 30)
+IntervalBox.Font = Enum.Font.Gotham
+IntervalBox.Text = "2.5"
+IntervalBox.PlaceholderText = "Delay"
+IntervalBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+IntervalBox.Parent = MainFrame
+
+local IntervalCorner = Instance.new("UICorner")
+IntervalCorner.CornerRadius = UDim.new(0, 6)
+IntervalCorner.Parent = IntervalBox
+
+local ChatToggleBtn = Instance.new("TextButton")
+ChatToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 100)
+ChatToggleBtn.Position = UDim2.new(0.5, 0, 0, 185)
+ChatToggleBtn.Size = UDim2.new(0.45, 0, 0, 30)
+ChatToggleBtn.Font = Enum.Font.GothamBold
+ChatToggleBtn.Text = "START CHAT"
+ChatToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ChatToggleBtn.Parent = MainFrame
+
+local ChatBtnCorner = Instance.new("UICorner")
+ChatBtnCorner.CornerRadius = UDim.new(0, 6)
+ChatBtnCorner.Parent = ChatToggleBtn
+
+--------------------------------------------------------------------------------
+-- SPIN & DONATION SECTION
+--------------------------------------------------------------------------------
+
+local Divider = Instance.new("Frame")
+Divider.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+Divider.BorderSizePixel = 0
+Divider.Position = UDim2.new(0, 10, 0, 230)
+Divider.Size = UDim2.new(1, -20, 0, 1)
+Divider.Parent = MainFrame
+
+local SectionLabel2 = Instance.new("TextLabel")
+SectionLabel2.BackgroundTransparency = 1
+SectionLabel2.Position = UDim2.new(0, 15, 0, 240)
+SectionLabel2.Size = UDim2.new(1, -30, 0, 20)
+SectionLabel2.Font = Enum.Font.GothamBold
+SectionLabel2.Text = "SPIN DONATION HANDLER"
+SectionLabel2.TextColor3 = Color3.fromRGB(180, 180, 180)
+SectionLabel2.TextXAlignment = Enum.TextXAlignment.Left
+SectionLabel2.TextSize = 12
+SectionLabel2.Parent = MainFrame
+
+local SpeedLabel = Instance.new("TextLabel")
+SpeedLabel.BackgroundTransparency = 1
+SpeedLabel.Position = UDim2.new(0, 15, 0, 265)
+SpeedLabel.Size = UDim2.new(1, -30, 0, 30)
+SpeedLabel.Font = Enum.Font.GothamBold
+SpeedLabel.Text = "Current Speed: " .. spinSpeed
+SpeedLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
+SpeedLabel.TextSize = 18
+SpeedLabel.Parent = MainFrame
+
+-- Test Button
+local TestBtn = Instance.new("TextButton")
+TestBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+TestBtn.Position = UDim2.new(0.05, 0, 0, 305)
+TestBtn.Size = UDim2.new(0.9, 0, 0, 30)
+TestBtn.Font = Enum.Font.Gotham
+TestBtn.Text = "Test Simulate Donation (+5)"
+TestBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+TestBtn.Parent = MainFrame
+
+local TestBtnCorner = Instance.new("UICorner")
+TestBtnCorner.CornerRadius = UDim.new(0, 6)
+TestBtnCorner.Parent = TestBtn
+
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Position = UDim2.new(0, 0, 1, -25)
+StatusLabel.Size = UDim2.new(1, 0, 0, 20)
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.Text = "Waiting for purchase... (RightCtrl to hide)"
+StatusLabel.TextColor3 = Color3.fromRGB(100, 100, 100)
+StatusLabel.Font = Enum.Font.Gotham
+StatusLabel.TextSize = 11
+StatusLabel.Parent = MainFrame
+
+--------------------------------------------------------------------------------
+-- DRAGGABLE LOGIC
+--------------------------------------------------------------------------------
+local dragging, dragInput, dragStart, startPos
+
+local function update(input)
+    local delta = input.Position - dragStart
+    MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+MainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+
+MainFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then update(input) end
+end)
+
+--------------------------------------------------------------------------------
+-- CHAT LOGIC
+--------------------------------------------------------------------------------
+
+local function sendMessage(msg)
+    if not msg or msg:gsub("%s+", "") == "" then return end
+    pcall(function()
+        if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+            local generalChannel = TextChatService.TextChannels:FindFirstChild("RBXGeneral")
+            if generalChannel then generalChannel:SendAsync(msg) end
+        else
+            local event = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+            if event then
+                local sayRequest = event:FindFirstChild("SayMessageRequest")
+                if sayRequest then sayRequest:FireServer(msg, "All") end
+            end
+        end
+    end)
+end
+
+local function toggleChat()
+    if isChatting then
+        isChatting = false
+        if chatLoopTask then task.cancel(chatLoopTask) end
+        ChatToggleBtn.Text = "START CHAT"
+        ChatToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 100)
+    else
+        local phrases = PhraseBox.Text:split("\n")
+        local cleanPhrases = {}
+        for _, v in pairs(phrases) do
+            if v:gsub("%s+", "") ~= "" then table.insert(cleanPhrases, v) end
+        end
+        
+        if #cleanPhrases == 0 then return end
+        
+        isChatting = true
+        ChatToggleBtn.Text = "STOP CHAT"
+        ChatToggleBtn.BackgroundColor3 = Color3.fromRGB(170, 50, 50)
+        
+        local delayTime = tonumber(IntervalBox.Text) or MIN_DELAY
+        if delayTime < MIN_DELAY then delayTime = MIN_DELAY end
+        
+        chatLoopTask = task.spawn(function()
+            while isChatting do
+                if chatIndex > #cleanPhrases then chatIndex = 1 end
+                sendMessage(cleanPhrases[chatIndex])
+                chatIndex = chatIndex + 1
+                task.wait(delayTime)
+            end
+        end)
+    end
+end
+
+ChatToggleBtn.MouseButton1Click:Connect(toggleChat)
+
+--------------------------------------------------------------------------------
+-- SPIN LOGIC & PURCHASE HANDLER
+--------------------------------------------------------------------------------
+
+-- Helper to update Spin UI
+local function updateSpinUI()
+    SpeedLabel.Text = "Current Speed: " .. spinSpeed
+    StatusLabel.Text = "Speed increased! Spinning at " .. spinSpeed
+end
+
+-- 1. RenderStepped Loop for Smooth Spinning
+RunService.RenderStepped:Connect(function()
+    if isSpinning and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local hrp = LocalPlayer.Character.HumanoidRootPart
+        -- Use CFrame rotation (Foolproof physics)
+        hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(spinSpeed), 0)
+    end
+end)
+
+-- 2. Purchase Detection (Client Side)
+local function onPurchaseFinished(wasPurchased, id)
+    if wasPurchased then
+        if id == GP_ID_3_ROBUX then
+            spinSpeed = spinSpeed + 3
+            updateSpinUI()
+        elseif id == GP_ID_5_ROBUX then
+            spinSpeed = spinSpeed + 5
+            updateSpinUI()
+        end
+    end
+end
+
+-- Listen for GamePasses
+MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, passId, wasPurchased)
+    if player == LocalPlayer then
+        onPurchaseFinished(wasPurchased, passId)
+    end
+end)
+
+-- Listen for Products (Just in case the IDs are dev products)
+MarketplaceService.PromptProductPurchaseFinished:Connect(function(userId, productId, wasPurchased)
+    if userId == LocalPlayer.UserId then
+        onPurchaseFinished(wasPurchased, productId)
+    end
+end)
+
+-- 3. Test Donation Logic
+TestBtn.MouseButton1Click:Connect(function()
+    spinSpeed = spinSpeed + 5
+    updateSpinUI()
+end)
+
+--------------------------------------------------------------------------------
+-- TOGGLE & CLEANUP
+--------------------------------------------------------------------------------
+
+UserInputService.InputBegan:Connect(function(input, gp)
+    if input.KeyCode == UI_TOGGLE_KEY then
+        MainFrame.Visible = not MainFrame.Visible
+    end
+end)
+
+script.Destroying:Connect(function()
+    isChatting = false
+    isSpinning = false
+    ScreenGui:Destroy()
+end)
