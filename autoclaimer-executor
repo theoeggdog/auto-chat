@@ -1,0 +1,286 @@
+--[[ 
+    FINAL BOOTH CLAIMER (PAYLOAD EDITION)
+    - Teleports -> Simulates 'E' -> Checks Logs
+    - On Success:
+      1. Executes your 3 external scripts
+      2. Unloads UI
+      3. Destroys itself
+    - Client-Side Only
+]]
+
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local LogService = game:GetService("LogService")
+local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local CoreGui = game:GetService("CoreGui")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Configuration
+local SEARCH_DELAY = 1         -- Time to check logs after attempt
+local HOLD_DURATION = 3.5      -- How long to hold 'E'
+local UI_TOGGLE_KEY = Enum.KeyCode.RightControl
+
+-- State
+local isSearching = true
+local boothFound = false
+
+--------------------------------------------------------------------------------
+-- GUI CREATION
+--------------------------------------------------------------------------------
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AutoBoothPayload"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = PlayerGui
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+MainFrame.BorderSizePixel = 0
+MainFrame.Position = UDim2.new(0.5, -140, 0.5, -110)
+MainFrame.Size = UDim2.new(0, 280, 0, 240)
+MainFrame.Parent = ScreenGui
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.Parent = MainFrame
+
+local UIStroke = Instance.new("UIStroke")
+UIStroke.Color = Color3.fromRGB(60, 60, 60)
+UIStroke.Thickness = 2
+UIStroke.Parent = MainFrame
+
+local Title = Instance.new("TextLabel")
+Title.BackgroundTransparency = 1
+Title.Size = UDim2.new(1, 0, 0, 30)
+Title.Font = Enum.Font.GothamBold
+Title.Text = "AUTO CLAIMER + LOAD"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 16
+Title.Parent = MainFrame
+
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.Position = UDim2.new(0, 0, 0.2, 0)
+StatusLabel.Size = UDim2.new(1, 0, 0, 25)
+StatusLabel.Font = Enum.Font.GothamBold
+StatusLabel.Text = "SEARCHING..."
+StatusLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
+StatusLabel.TextSize = 14
+StatusLabel.Parent = MainFrame
+
+local DebugLabel = Instance.new("TextLabel")
+DebugLabel.BackgroundTransparency = 1
+DebugLabel.Position = UDim2.new(0, 10, 0.4, 0)
+DebugLabel.Size = UDim2.new(1, -20, 0, 50)
+DebugLabel.Font = Enum.Font.Code
+DebugLabel.Text = "Initializing..."
+DebugLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+DebugLabel.TextSize = 11
+DebugLabel.TextWrapped = true
+DebugLabel.TextYAlignment = Enum.TextYAlignment.Top
+DebugLabel.Parent = MainFrame
+
+local StopBtn = Instance.new("TextButton")
+StopBtn.BackgroundColor3 = Color3.fromRGB(170, 50, 50)
+StopBtn.Position = UDim2.new(0.1, 0, 0.82, 0)
+StopBtn.Size = UDim2.new(0.8, 0, 0, 35)
+StopBtn.Font = Enum.Font.GothamBold
+StopBtn.Text = "STOP SEARCH"
+StopBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+StopBtn.Parent = MainFrame
+Instance.new("UICorner", StopBtn).CornerRadius = UDim.new(0, 6)
+
+--------------------------------------------------------------------------------
+-- DRAGGABLE LOGIC
+--------------------------------------------------------------------------------
+local dragging, dragInput, dragStart, startPos
+local function update(input)
+    local delta = input.Position - dragStart
+    MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+MainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+    end
+end)
+MainFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
+end)
+UserInputService.InputChanged:Connect(function(input) if input == dragInput and dragging then update(input) end end)
+
+--------------------------------------------------------------------------------
+-- SUCCESS & PAYLOAD HANDLER
+--------------------------------------------------------------------------------
+
+local function executePayloads()
+    StatusLabel.Text = "EXECUTING SCRIPTS..."
+    DebugLabel.Text = "Loading external scripts..."
+    
+    -- Using pcall to ensure one failure doesn't stop the rest
+    pcall(function() 
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/theoeggdog/auto-chat/refs/heads/main/hardcoded-chat"))() 
+    end)
+    task.wait(0.1)
+    
+    pcall(function() 
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/theoeggdog/auto-chat/refs/heads/main/script1"))() 
+    end)
+    task.wait(0.1)
+    
+    pcall(function() 
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/theoeggdog/auto-chat/refs/heads/main/script2"))() 
+    end)
+end
+
+local function onSuccess()
+    boothFound = true
+    isSearching = false
+    
+    -- 1. Visual Update
+    StatusLabel.Text = "CLAIMED!"
+    StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
+    
+    -- 2. Execute Scripts
+    executePayloads()
+    
+    -- 3. Cleanup & Self Destruct
+    DebugLabel.Text = "Done. Unloading UI..."
+    task.delay(2, function()
+        if ScreenGui then ScreenGui:Destroy() end
+        if script then script:Destroy() end
+    end)
+end
+
+LogService.MessageOut:Connect(function(message, messageType)
+    if isSearching and string.find(message, "YourBooth") then
+        onSuccess()
+    end
+end)
+
+--------------------------------------------------------------------------------
+-- SEARCH LOGIC
+--------------------------------------------------------------------------------
+
+local function getSafeTeleportCFrame(model)
+    if model.PrimaryPart then return model.PrimaryPart.CFrame * CFrame.new(0, 0, -3.5) end
+    local pivot = model:GetPivot()
+    if pivot then return pivot * CFrame.new(0, 0, -3.5) end
+    local part = model:FindFirstChildWhichIsA("BasePart", true)
+    if part then return part.CFrame * CFrame.new(0, 0, -3.5) end
+    return nil
+end
+
+local function simulateKeyPress(duration)
+    if not isSearching then return end
+    
+    StatusLabel.Text = "PRESSING E..."
+    
+    -- Press Key Down
+    pcall(function()
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+    end)
+
+    -- Wait Loop
+    local elapsed = 0
+    while elapsed < duration do
+        if not isSearching then break end
+        task.wait(0.1)
+        elapsed = elapsed + 0.1
+    end
+
+    -- Release Key Up
+    pcall(function()
+        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+    end)
+end
+
+StopBtn.MouseButton1Click:Connect(function()
+    isSearching = not isSearching
+    StopBtn.Text = isSearching and "STOP SEARCH" or "RESUME SEARCH"
+    StopBtn.BackgroundColor3 = isSearching and Color3.fromRGB(170, 50, 50) or Color3.fromRGB(0, 170, 100)
+end)
+
+-- MAIN SEARCH LOOP
+task.spawn(function()
+    while true do
+        if not isSearching or boothFound then
+            if boothFound then break end 
+            task.wait(0.5)
+            continue
+        end
+
+        local folder = Workspace:FindFirstChild("BoothModels")
+        if folder then
+            local children = folder:GetChildren()
+            local booths = {}
+            for _,v in pairs(children) do
+                if v.Name == "BasicBooth" then table.insert(booths, v) end
+            end
+
+            if #booths > 0 then
+                local randomBooth = booths[math.random(1, #booths)]
+                local targetCFrame = getSafeTeleportCFrame(randomBooth)
+
+                if targetCFrame then
+                    local char = LocalPlayer.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    
+                    if hrp then
+                        StatusLabel.Text = "TP: " .. randomBooth.Name
+                        DebugLabel.Text = "Moved. Simulating Input..."
+                        
+                        -- Teleport
+                        hrp.CFrame = targetCFrame
+                        hrp.Velocity = Vector3.zero
+                        task.wait(0.5) -- Stabilize
+                        
+                        -- Visual Helper
+                        local prompt = randomBooth:FindFirstChildWhichIsA("ProximityPrompt", true)
+                        if prompt then prompt:InputHoldBegin() end
+                        
+                        -- Blind Input
+                        simulateKeyPress(HOLD_DURATION)
+                        
+                        -- Release Helper
+                        if prompt then prompt:InputHoldEnd() end
+                        
+                        StatusLabel.Text = "Checking..."
+                        task.wait(SEARCH_DELAY)
+                    end
+                else
+                    DebugLabel.Text = "Skipped: Invalid CFrame"
+                end
+            else
+                StatusLabel.Text = "No Booths Found"
+                task.wait(2)
+            end
+        else
+            DebugLabel.Text = "Waiting for workspace..."
+            task.wait(1)
+        end
+        task.wait(0.2)
+    end
+end)
+
+--------------------------------------------------------------------------------
+-- CLEANUP
+--------------------------------------------------------------------------------
+UserInputService.InputBegan:Connect(function(input)
+    if input.KeyCode == UI_TOGGLE_KEY and MainFrame then 
+        MainFrame.Visible = not MainFrame.Visible 
+    end
+end)
+
+script.Destroying:Connect(function()
+    isSearching = false
+    pcall(function() VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game) end)
+    if ScreenGui then ScreenGui:Destroy() end
+end)
