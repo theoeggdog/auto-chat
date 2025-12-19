@@ -22,7 +22,7 @@ local TARGET_USER = "theosbot_2"
 local UI_TOGGLE_KEY = Enum.KeyCode.RightControl
 
 -- State Variables
-local baseSpeed = 1
+local baseSpeed = 20
 local bonusSpeed = 0
 local isSpinning = true
 
