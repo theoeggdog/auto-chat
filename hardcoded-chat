@@ -22,11 +22,11 @@ local COOLDOWN = 30 -- FIXED 30 SECONDS
 
 -- HARD-CODED PHRASES
 local PHRASES = {
-    "1+ robux = 1+ spin speed!",
+    "+ robux = + spin speed!",
     "if you donate, i will spin faster!",
-    "1+ robux = 1+ spin speed!",
+    "+ robux = + spin speed!",
     "if you donate, i will spin faster!",
-    "1+ robux = 1+ spin speed!",
+    "+ robux = + spin speed!",
     "if you donate, i will spin faster!"
 }
 
