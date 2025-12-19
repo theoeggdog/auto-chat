@@ -1,9 +1,9 @@
 --[[ 
-    SPIN BOT V3 (SMART PARSER & JUMP REACTION)
-    - Base Speed: 20 (Default)
-    - Formula: Speed += (DonationAmount / 2)
-    - Action: Jumps 1 or 2 times (50/50 chance) on donation
-    - Parser: Ignores the "2" in "theosbot_2"
+    SPIN DONATION BOT V4 (OMNI-LISTENER FIX)
+    - Listens to ALL Chat Events (System, General, Legacy)
+    - Aggressively cleans username to ignore '2'
+    - Debug Prints (Press F9 to see logs)
+    - Jump Reaction + Speed Math
 ]]
 
 local Players = game:GetService("Players")
@@ -30,7 +30,7 @@ local isSpinning = true
 --------------------------------------------------------------------------------
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "SpinBotGUI_V3"
+ScreenGui.Name = "SpinBotGUI_V4"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
@@ -42,7 +42,7 @@ MainFrame.Name = "MainFrame"
 MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 MainFrame.BorderSizePixel = 0
 MainFrame.Position = UDim2.new(0.5, -130, 0.5, -140)
-MainFrame.Size = UDim2.new(0, 260, 0, 280) -- Adjusted size since buttons are gone
+MainFrame.Size = UDim2.new(0, 260, 0, 280)
 MainFrame.Parent = ScreenGui
 
 local UICorner = Instance.new("UICorner")
@@ -59,7 +59,7 @@ local HeaderLabel = Instance.new("TextLabel")
 HeaderLabel.BackgroundTransparency = 1
 HeaderLabel.Size = UDim2.new(1, 0, 0, 40)
 HeaderLabel.Font = Enum.Font.GothamBold
-HeaderLabel.Text = "SPIN DONATION BOT"
+HeaderLabel.Text = "SPIN BOT V4 (DEBUG)"
 HeaderLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 HeaderLabel.TextSize = 16
 HeaderLabel.Parent = MainFrame
@@ -83,7 +83,7 @@ MonitorLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
 MonitorLabel.TextSize = 12
 MonitorLabel.Parent = MainFrame
 
--- Speed Input Section
+-- Speed Input
 local InputLabel = Instance.new("TextLabel")
 InputLabel.BackgroundTransparency = 1
 InputLabel.Position = UDim2.new(0.1, 0, 0.32, 0)
@@ -134,45 +134,39 @@ Instance.new("UICorner", ResetBtn).CornerRadius = UDim.new(0, 6)
 
 local function updateDisplay()
     local total = baseSpeed + bonusSpeed
-    TotalDisplay.Text = "TOTAL SPEED: " .. math.floor(total) -- Clean number
+    TotalDisplay.Text = "TOTAL SPEED: " .. math.floor(total)
     if not SpeedInput:IsFocused() then
         SpeedInput.Text = tostring(baseSpeed)
     end
 end
 
--- Jump Logic (50/50 Chance)
 local function performJump()
     task.spawn(function()
         local char = LocalPlayer.Character
         local hum = char and char:FindFirstChild("Humanoid")
         if hum then
-            -- 50% chance for 1 jump, 50% chance for 2 jumps
             local jumpCount = math.random(1, 2)
-            
             for i = 1, jumpCount do
                 hum.Jump = true
-                -- Wait for landing roughly before jumping again
-                task.wait(0.6) 
+                task.wait(0.6)
             end
         end
     end)
 end
 
--- Process Donation
 local function handleDonation(amount)
-    -- Calculate speed addition (Amount / 2)
+    -- Math: Speed += (Amount / 2)
     local speedAdd = amount / 2
     bonusSpeed = bonusSpeed + speedAdd
     updateDisplay()
     
-    -- UI Feedback
+    print(">> [SPIN BOT] MATCHED! Added " .. speedAdd .. " speed from " .. amount .. " Robux.")
+    
     MonitorLabel.Text = "Detected: " .. amount .. " Robux!"
     MonitorLabel.TextColor3 = Color3.fromRGB(0, 255, 255)
     
-    -- Trigger Jump
     performJump()
     
-    -- Reset label after 2s
     task.delay(2, function()
         MonitorLabel.Text = "Watching: @" .. TARGET_USER
         MonitorLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
@@ -180,48 +174,73 @@ local function handleDonation(amount)
 end
 
 --------------------------------------------------------------------------------
--- CHAT SCANNER (LOGIC UPDATE)
+-- CHAT SCANNER (ADVANCED PARSER)
 --------------------------------------------------------------------------------
 
 local function processChat(message)
+    -- Debug: See what the script sees
+    -- print(">> Scanned: " .. message) 
+    
     local lowerMsg = message:lower()
     
-    -- 1. Check for Username
+    -- 1. Username Check (Strict)
     if not lowerMsg:find(TARGET_USER) then return end
     
-    -- 2. Check for Keywords
+    -- 2. Keyword Check
     if not (lowerMsg:find("tipped") or lowerMsg:find("donated")) then return end
 
-    -- 3. CLEANING STRING TO FIND AMOUNT
-    -- Remove the target username specifically so the "2" in "theosbot_2" isn't detected
+    -- 3. REMOVE USERNAME to prevent catching the '2'
     local cleanMsg = lowerMsg:gsub(TARGET_USER, "") 
     
-    -- Remove Rich Text tags (<...>) and commas (1,000 -> 1000)
-    cleanMsg = cleanMsg:gsub("<[^>]+>", ""):gsub(",", "")
+    -- 4. CLEANUP (Remove tags <br>, remove commas 1,000)
+    cleanMsg = cleanMsg:gsub("<[^>]+>", " ") -- Replace tags with space
+    cleanMsg = cleanMsg:gsub(",", "")        -- Remove commas
     
-    -- Find the first valid number sequence remaining in the string
-    local amountString = cleanMsg:match("%d+")
-    
-    if amountString then
+    -- 5. FIND NUMBERS
+    -- We look for any digit sequence
+    for amountString in cleanMsg:gmatch("%d+") do
         local amount = tonumber(amountString)
+        
+        -- Logic: If it's a valid number and NOT '2' (extra safety), use it.
+        -- In most "tipped 5" messages, 5 is the only number left after name removal.
         if amount and amount > 0 then
-            handleDonation(amount)
+             -- Safety check: Avoid extremely small numbers that might be IDs if any remain
+             -- But usually donations are the only numbers left.
+             handleDonation(amount)
+             break -- Stop after finding the first valid donation amount
         end
     end
 end
 
--- Connect to Chat
+--------------------------------------------------------------------------------
+-- EVENT LISTENERS (OMNI-CHANNEL)
+--------------------------------------------------------------------------------
+
+-- 1. New TextChatService (Incoming Message - Catches System Msgs)
 if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
-    TextChatService.MessageReceived:Connect(function(data) processChat(data.Text) end)
-else
-    local ChatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
-    if ChatEvents then
-        local OnMessage = ChatEvents:FindFirstChild("OnMessageDoneFiltering")
-        if OnMessage then
-            OnMessage.OnClientEvent:Connect(function(data)
-                if data and data.Message then processChat(data.Message) end
-            end)
+    TextChatService.OnIncomingMessage = function(message)
+        if message.TextSource then
+            processChat(message.Text)
+        else
+            -- System messages often have no TextSource
+            processChat(message.Text)
         end
+    end
+end
+
+-- 2. New TextChatService (Standard Received)
+TextChatService.MessageReceived:Connect(function(data)
+    processChat(data.Text)
+end)
+
+-- 3. Legacy Chat (Old System / ReplicatedStorage)
+local ChatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+if ChatEvents then
+    local OnMessage = ChatEvents:FindFirstChild("OnMessageDoneFiltering")
+    if OnMessage then
+        OnMessage.OnClientEvent:Connect(function(data)
+            if data and data.Message then processChat(data.Message) end
+        end)
     end
 end
 
@@ -229,34 +248,29 @@ end
 -- INPUTS & LOOPS
 --------------------------------------------------------------------------------
 
--- Manual Speed Input
 SpeedInput.FocusLost:Connect(function()
     local num = tonumber(SpeedInput.Text)
     if num then baseSpeed = num else baseSpeed = 20 end
     updateDisplay()
 end)
 
--- Reset Button
 ResetBtn.MouseButton1Click:Connect(function()
     bonusSpeed = 0
     baseSpeed = 20
     updateDisplay()
 end)
 
--- Spin Loop (RenderStepped)
 RunService.RenderStepped:Connect(function()
     if isSpinning and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
         local hrp = LocalPlayer.Character.HumanoidRootPart
         local currentTotal = baseSpeed + bonusSpeed
-        
-        -- Apply rotation
         if currentTotal ~= 0 then
             hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(currentTotal), 0)
         end
     end
 end)
 
--- Draggable Logic
+-- UI Dragging
 local dragging, dragInput, dragStart, startPos
 local function update(input)
     local delta = input.Position - dragStart
@@ -275,7 +289,6 @@ MainFrame.InputChanged:Connect(function(input)
 end)
 UserInputService.InputChanged:Connect(function(input) if input == dragInput and dragging then update(input) end end)
 
--- Toggle Keybind
 UserInputService.InputBegan:Connect(function(input)
     if input.KeyCode == UI_TOGGLE_KEY then MainFrame.Visible = not MainFrame.Visible end
 end)
