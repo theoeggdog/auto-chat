@@ -1,10 +1,9 @@
 --[[ 
-    ADVANCED SPIN DONATION HANDLER (CHAT SCANNER EDITION)
-    - Client-Side Only
-    - Detects 'theosbot_2' + '3' or '5' in chat
-    - Handles Rich Text (Green colors, Bold, Robux symbols)
-    - Draggable Modern UI
-    - Anti-Softlock
+    SPIN BOT V3 (SMART PARSER & JUMP REACTION)
+    - Base Speed: 20 (Default)
+    - Formula: Speed += (DonationAmount / 2)
+    - Action: Jumps 1 or 2 times (50/50 chance) on donation
+    - Parser: Ignores the "2" in "theosbot_2"
 ]]
 
 local Players = game:GetService("Players")
@@ -31,7 +30,7 @@ local isSpinning = true
 --------------------------------------------------------------------------------
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "SpinBotGUI_V2"
+ScreenGui.Name = "SpinBotGUI_V3"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
@@ -42,8 +41,8 @@ local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 MainFrame.BorderSizePixel = 0
-MainFrame.Position = UDim2.new(0.5, -140, 0.5, -160)
-MainFrame.Size = UDim2.new(0, 280, 0, 340)
+MainFrame.Position = UDim2.new(0.5, -130, 0.5, -140)
+MainFrame.Size = UDim2.new(0, 260, 0, 280) -- Adjusted size since buttons are gone
 MainFrame.Parent = ScreenGui
 
 local UICorner = Instance.new("UICorner")
@@ -65,29 +64,29 @@ HeaderLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 HeaderLabel.TextSize = 16
 HeaderLabel.Parent = MainFrame
 
--- Status Monitor
-local MonitorLabel = Instance.new("TextLabel")
-MonitorLabel.BackgroundTransparency = 1
-MonitorLabel.Position = UDim2.new(0, 0, 0.12, 0)
-MonitorLabel.Size = UDim2.new(1, 0, 0, 20)
-MonitorLabel.Font = Enum.Font.Gotham
-MonitorLabel.Text = "Watching: @" .. TARGET_USER
-MonitorLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-MonitorLabel.TextSize = 11
-MonitorLabel.Parent = MainFrame
-
 -- Divider
 local Divider = Instance.new("Frame")
 Divider.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
 Divider.BorderSizePixel = 0
-Divider.Position = UDim2.new(0, 20, 0, 50)
+Divider.Position = UDim2.new(0, 20, 0, 45)
 Divider.Size = UDim2.new(1, -40, 0, 1)
 Divider.Parent = MainFrame
 
--- Speed Input
+-- Status Monitor
+local MonitorLabel = Instance.new("TextLabel")
+MonitorLabel.BackgroundTransparency = 1
+MonitorLabel.Position = UDim2.new(0, 0, 0.2, 0)
+MonitorLabel.Size = UDim2.new(1, 0, 0, 20)
+MonitorLabel.Font = Enum.Font.Gotham
+MonitorLabel.Text = "Watching: @" .. TARGET_USER
+MonitorLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+MonitorLabel.TextSize = 12
+MonitorLabel.Parent = MainFrame
+
+-- Speed Input Section
 local InputLabel = Instance.new("TextLabel")
 InputLabel.BackgroundTransparency = 1
-InputLabel.Position = UDim2.new(0.1, 0, 0.2, 0)
+InputLabel.Position = UDim2.new(0.1, 0, 0.32, 0)
 InputLabel.Size = UDim2.new(0.8, 0, 0, 20)
 InputLabel.Font = Enum.Font.GothamMedium
 InputLabel.Text = "Base Speed (Manual)"
@@ -98,64 +97,31 @@ InputLabel.Parent = MainFrame
 
 local SpeedInput = Instance.new("TextBox")
 SpeedInput.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-SpeedInput.Position = UDim2.new(0.1, 0, 0.27, 0)
+SpeedInput.Position = UDim2.new(0.1, 0, 0.4, 0)
 SpeedInput.Size = UDim2.new(0.8, 0, 0, 35)
 SpeedInput.Font = Enum.Font.GothamBold
 SpeedInput.Text = "20"
 SpeedInput.TextColor3 = Color3.fromRGB(0, 255, 150)
 SpeedInput.TextSize = 18
 SpeedInput.Parent = MainFrame
-
-local InputCorner = Instance.new("UICorner")
-InputCorner.CornerRadius = UDim.new(0, 6)
-InputCorner.Parent = SpeedInput
+Instance.new("UICorner", SpeedInput).CornerRadius = UDim.new(0, 6)
 
 -- Total Speed Display
 local TotalDisplay = Instance.new("TextLabel")
 TotalDisplay.BackgroundTransparency = 1
-TotalDisplay.Position = UDim2.new(0.1, 0, 0.42, 0)
-TotalDisplay.Size = UDim2.new(0.8, 0, 0, 30)
-TotalDisplay.Font = Enum.Font.Gotham
-TotalDisplay.Text = "Total Speed: 20"
+TotalDisplay.Position = UDim2.new(0, 0, 0.58, 0)
+TotalDisplay.Size = UDim2.new(1, 0, 0, 40)
+TotalDisplay.Font = Enum.Font.GothamBold
+TotalDisplay.Text = "TOTAL SPEED: 20"
 TotalDisplay.TextColor3 = Color3.fromRGB(255, 200, 50)
-TotalDisplay.TextSize = 16
+TotalDisplay.TextSize = 20
 TotalDisplay.Parent = MainFrame
 
--- Simulation Buttons
-local SimLabel = Instance.new("TextLabel")
-SimLabel.BackgroundTransparency = 1
-SimLabel.Position = UDim2.new(0.1, 0, 0.58, 0)
-SimLabel.Size = UDim2.new(0.8, 0, 0, 20)
-SimLabel.Font = Enum.Font.GothamMedium
-SimLabel.Text = "Simulate Trigger (Test)"
-SimLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
-SimLabel.TextSize = 12
-SimLabel.Parent = MainFrame
-
-local Btn3 = Instance.new("TextButton")
-Btn3.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-Btn3.Position = UDim2.new(0.1, 0, 0.65, 0)
-Btn3.Size = UDim2.new(0.38, 0, 0, 35)
-Btn3.Font = Enum.Font.GothamBold
-Btn3.Text = "+3 Test"
-Btn3.TextColor3 = Color3.fromRGB(255, 255, 255)
-Btn3.Parent = MainFrame
-Instance.new("UICorner", Btn3).CornerRadius = UDim.new(0, 6)
-
-local Btn5 = Instance.new("TextButton")
-Btn5.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-Btn5.Position = UDim2.new(0.52, 0, 0.65, 0)
-Btn5.Size = UDim2.new(0.38, 0, 0, 35)
-Btn5.Font = Enum.Font.GothamBold
-Btn5.Text = "+5 Test"
-Btn5.TextColor3 = Color3.fromRGB(255, 255, 255)
-Btn5.Parent = MainFrame
-Instance.new("UICorner", Btn5).CornerRadius = UDim.new(0, 6)
-
+-- Reset Button
 local ResetBtn = Instance.new("TextButton")
 ResetBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
-ResetBtn.Position = UDim2.new(0.1, 0, 0.82, 0)
-ResetBtn.Size = UDim2.new(0.8, 0, 0, 30)
+ResetBtn.Position = UDim2.new(0.1, 0, 0.8, 0)
+ResetBtn.Size = UDim2.new(0.8, 0, 0, 35)
 ResetBtn.Font = Enum.Font.GothamBold
 ResetBtn.Text = "RESET SPEED"
 ResetBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -163,103 +129,134 @@ ResetBtn.Parent = MainFrame
 Instance.new("UICorner", ResetBtn).CornerRadius = UDim.new(0, 6)
 
 --------------------------------------------------------------------------------
--- LOGIC & DISPLAY UPDATE
+-- LOGIC FUNCTIONS
 --------------------------------------------------------------------------------
 
 local function updateDisplay()
     local total = baseSpeed + bonusSpeed
-    TotalDisplay.Text = "Total Speed: " .. total
+    TotalDisplay.Text = "TOTAL SPEED: " .. math.floor(total) -- Clean number
     if not SpeedInput:IsFocused() then
         SpeedInput.Text = tostring(baseSpeed)
     end
 end
 
--- Input Handling
-SpeedInput.FocusLost:Connect(function()
-    local num = tonumber(SpeedInput.Text)
-    if num then baseSpeed = num else baseSpeed = 1 end
-    updateDisplay()
-end)
-
-Btn3.MouseButton1Click:Connect(function() bonusSpeed += 3; updateDisplay() end)
-Btn5.MouseButton1Click:Connect(function() bonusSpeed += 5; updateDisplay() end)
-ResetBtn.MouseButton1Click:Connect(function()
-    bonusSpeed = 0
-    baseSpeed = 20
-    updateDisplay()
-end)
-
--- Spin Loop
-RunService.RenderStepped:Connect(function()
-    if isSpinning and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        local hrp = LocalPlayer.Character.HumanoidRootPart
-        local currentTotal = baseSpeed + bonusSpeed
-        if currentTotal ~= 0 then
-            hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(currentTotal), 0)
+-- Jump Logic (50/50 Chance)
+local function performJump()
+    task.spawn(function()
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChild("Humanoid")
+        if hum then
+            -- 50% chance for 1 jump, 50% chance for 2 jumps
+            local jumpCount = math.random(1, 2)
+            
+            for i = 1, jumpCount do
+                hum.Jump = true
+                -- Wait for landing roughly before jumping again
+                task.wait(0.6) 
+            end
         end
-    end
-end)
+    end)
+end
+
+-- Process Donation
+local function handleDonation(amount)
+    -- Calculate speed addition (Amount / 2)
+    local speedAdd = amount / 2
+    bonusSpeed = bonusSpeed + speedAdd
+    updateDisplay()
+    
+    -- UI Feedback
+    MonitorLabel.Text = "Detected: " .. amount .. " Robux!"
+    MonitorLabel.TextColor3 = Color3.fromRGB(0, 255, 255)
+    
+    -- Trigger Jump
+    performJump()
+    
+    -- Reset label after 2s
+    task.delay(2, function()
+        MonitorLabel.Text = "Watching: @" .. TARGET_USER
+        MonitorLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+    end)
+end
 
 --------------------------------------------------------------------------------
--- CHAT SCANNER
+-- CHAT SCANNER (LOGIC UPDATE)
 --------------------------------------------------------------------------------
 
 local function processChat(message)
-    -- 1. Lowercase for easy matching
-    local msgLower = message:lower()
-
-    -- 2. Check for the target user (theosbot_2)
-    -- This works even if it says "**theosbot_2**" or "*theosbot_2*"
-    if not msgLower:find(TARGET_USER) then return end
-
-    -- 3. Clean Rich Text tags and Bold Syntax
-    -- This removes <font color='...'>, <img ...>, <b>, </b> etc.
-    local cleanMsg = message:gsub("<[^>]+>", "") -- Remove XML/HTML tags
-    cleanMsg = cleanMsg:gsub("%*", "")           -- Remove asterisks (Markdown bold)
+    local lowerMsg = message:lower()
     
-    -- 4. Look for numbers 3 or 5 in the cleaned message
-    -- %f[%d] is a frontier pattern ensuring we match specific numbers
-    -- Example: Matches "3" but ignores "30" or "13"
+    -- 1. Check for Username
+    if not lowerMsg:find(TARGET_USER) then return end
     
-    if cleanMsg:find("%f[%d]3%f[%D]") then
-        bonusSpeed = bonusSpeed + 3
-        updateDisplay()
-        MonitorLabel.Text = "Detected +3 Donation!"
-        task.delay(2, function() MonitorLabel.Text = "Watching: @" .. TARGET_USER end)
-        
-    elseif cleanMsg:find("%f[%d]5%f[%D]") then
-        bonusSpeed = bonusSpeed + 5
-        updateDisplay()
-        MonitorLabel.Text = "Detected +5 Donation!"
-        task.delay(2, function() MonitorLabel.Text = "Watching: @" .. TARGET_USER end)
+    -- 2. Check for Keywords
+    if not (lowerMsg:find("tipped") or lowerMsg:find("donated")) then return end
+
+    -- 3. CLEANING STRING TO FIND AMOUNT
+    -- Remove the target username specifically so the "2" in "theosbot_2" isn't detected
+    local cleanMsg = lowerMsg:gsub(TARGET_USER, "") 
+    
+    -- Remove Rich Text tags (<...>) and commas (1,000 -> 1000)
+    cleanMsg = cleanMsg:gsub("<[^>]+>", ""):gsub(",", "")
+    
+    -- Find the first valid number sequence remaining in the string
+    local amountString = cleanMsg:match("%d+")
+    
+    if amountString then
+        local amount = tonumber(amountString)
+        if amount and amount > 0 then
+            handleDonation(amount)
+        end
     end
 end
 
--- Support for New TextChatService (Bubble Chat V2)
+-- Connect to Chat
 if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
-    TextChatService.MessageReceived:Connect(function(textChatMessage)
-        -- We check the raw Text (contains tags) or metadata if needed
-        -- textChatMessage.Text usually contains the final formatted string
-        processChat(textChatMessage.Text)
-    end)
+    TextChatService.MessageReceived:Connect(function(data) processChat(data.Text) end)
 else
-    -- Support for Legacy Chat
     local ChatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
     if ChatEvents then
         local OnMessage = ChatEvents:FindFirstChild("OnMessageDoneFiltering")
         if OnMessage then
             OnMessage.OnClientEvent:Connect(function(data)
-                if data and data.Message then
-                    processChat(data.Message)
-                end
+                if data and data.Message then processChat(data.Message) end
             end)
         end
     end
 end
 
 --------------------------------------------------------------------------------
--- DRAGGABLE & CLEANUP
+-- INPUTS & LOOPS
 --------------------------------------------------------------------------------
+
+-- Manual Speed Input
+SpeedInput.FocusLost:Connect(function()
+    local num = tonumber(SpeedInput.Text)
+    if num then baseSpeed = num else baseSpeed = 20 end
+    updateDisplay()
+end)
+
+-- Reset Button
+ResetBtn.MouseButton1Click:Connect(function()
+    bonusSpeed = 0
+    baseSpeed = 20
+    updateDisplay()
+end)
+
+-- Spin Loop (RenderStepped)
+RunService.RenderStepped:Connect(function()
+    if isSpinning and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local hrp = LocalPlayer.Character.HumanoidRootPart
+        local currentTotal = baseSpeed + bonusSpeed
+        
+        -- Apply rotation
+        if currentTotal ~= 0 then
+            hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(currentTotal), 0)
+        end
+    end
+end)
+
+-- Draggable Logic
 local dragging, dragInput, dragStart, startPos
 local function update(input)
     local delta = input.Position - dragStart
@@ -278,6 +275,7 @@ MainFrame.InputChanged:Connect(function(input)
 end)
 UserInputService.InputChanged:Connect(function(input) if input == dragInput and dragging then update(input) end end)
 
+-- Toggle Keybind
 UserInputService.InputBegan:Connect(function(input)
     if input.KeyCode == UI_TOGGLE_KEY then MainFrame.Visible = not MainFrame.Visible end
 end)
