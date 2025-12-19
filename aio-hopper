@@ -1,448 +1,296 @@
 --[[ 
-    AIO HOPPER: ZONE CLAIMER + SERVER MANAGER
-    - Part 1: Zone Restricted Booth Claimer (X:70-260, Z:210-400)
-    - Part 2: Server Manager (15m Timer, Chat Reset, Auto-Hop)
-    - Fully Autonomous Cycle
+    SPIN DONATION BOT V4 (OMNI-LISTENER FIX)
+    - Listens to ALL Chat Events (System, General, Legacy)
+    - Aggressively cleans username to ignore '2'
+    - Debug Prints (Press F9 to see logs)
+    - Jump Reaction + Speed Math
 ]]
 
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local LogService = game:GetService("LogService")
+local CoreGui = game:GetService("CoreGui")
+local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
-local TeleportService = game:GetService("TeleportService")
-local HttpService = game:GetService("HttpService")
 local TextChatService = game:GetService("TextChatService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local CoreGui = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
---------------------------------------------------------------------------------
--- CONFIGURATION
---------------------------------------------------------------------------------
--- Server Manager Config
-local GAME_ID = 8737602449
-local TIME_LIMIT_MINUTES = 15
+-- Configuration
 local TARGET_USER = "theosbot_2"
-
--- Zone Claimer Config
-local SEARCH_DELAY = 1         
-local HOLD_DURATION = 3.5      
-local ZONE_MIN_X = 70
-local ZONE_MAX_X = 260
-local ZONE_MIN_Z = 210
-local ZONE_MAX_Z = 400
+local UI_TOGGLE_KEY = Enum.KeyCode.RightControl
 
 -- State Variables
-local isSearching = true
-local boothFound = false
-local timeLeft = TIME_LIMIT_MINUTES * 60
-local isHopping = false
+local baseSpeed = 20
+local bonusSpeed = 0
+local isSpinning = true
 
 --------------------------------------------------------------------------------
--- PART 1: SERVER MANAGER UI & LOGIC
+-- GUI CREATION
 --------------------------------------------------------------------------------
 
-local ManagerGui = Instance.new("ScreenGui")
-ManagerGui.Name = "ServerManagerGUI"
-ManagerGui.ResetOnSpawn = false
-ManagerGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-pcall(function() ManagerGui.Parent = CoreGui end)
-if not ManagerGui.Parent then ManagerGui.Parent = PlayerGui end
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "SpinBotGUI_V4"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-local ManagerFrame = Instance.new("Frame")
-ManagerFrame.Name = "ManagerFrame"
-ManagerFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-ManagerFrame.BorderSizePixel = 0
-ManagerFrame.Position = UDim2.new(1, -220, 1, -100) -- Bottom Right
-ManagerFrame.Size = UDim2.new(0, 200, 0, 80)
-ManagerFrame.Parent = ManagerGui
-
-local ManagerCorner = Instance.new("UICorner")
-ManagerCorner.CornerRadius = UDim.new(0, 8)
-ManagerCorner.Parent = ManagerFrame
-
-local ManagerStroke = Instance.new("UIStroke")
-ManagerStroke.Color = Color3.fromRGB(60, 60, 60)
-ManagerStroke.Thickness = 2
-ManagerStroke.Parent = ManagerFrame
-
-local ManagerTitle = Instance.new("TextLabel")
-ManagerTitle.BackgroundTransparency = 1
-ManagerTitle.Position = UDim2.new(0, 0, 0, 5)
-ManagerTitle.Size = UDim2.new(1, 0, 0, 20)
-ManagerTitle.Font = Enum.Font.GothamBold
-ManagerTitle.Text = "SERVER MANAGER"
-ManagerTitle.TextColor3 = Color3.fromRGB(150, 150, 150)
-ManagerTitle.TextSize = 12
-ManagerTitle.Parent = ManagerFrame
-
-local TimerLabel = Instance.new("TextLabel")
-TimerLabel.BackgroundTransparency = 1
-TimerLabel.Position = UDim2.new(0, 0, 0.35, 0)
-TimerLabel.Size = UDim2.new(1, 0, 0, 30)
-TimerLabel.Font = Enum.Font.GothamBold
-TimerLabel.Text = "15:00"
-TimerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-TimerLabel.TextSize = 24
-TimerLabel.Parent = ManagerFrame
-
-local ManagerStatus = Instance.new("TextLabel")
-ManagerStatus.BackgroundTransparency = 1
-ManagerStatus.Position = UDim2.new(0, 0, 0.7, 0)
-ManagerStatus.Size = UDim2.new(1, 0, 0, 20)
-ManagerStatus.Font = Enum.Font.Gotham
-ManagerStatus.Text = "Watching: @" .. TARGET_USER
-ManagerStatus.TextColor3 = Color3.fromRGB(100, 100, 100)
-ManagerStatus.TextSize = 11
-ManagerStatus.Parent = ManagerFrame
-
--- HOP LOGIC
-local function serverHop()
-    if isHopping then return end
-    isHopping = true
-    
-    ManagerStatus.Text = "HOPPING SERVERS..."
-    ManagerStatus.TextColor3 = Color3.fromRGB(255, 50, 50)
-    
-    local success, result = pcall(function()
-        return HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/".. GAME_ID .."/servers/Public?sortOrder=Desc&limit=100"))
-    end)
-    
-    if success and result and result.data then
-        local candidates = {}
-        for _, server in pairs(result.data) do
-            if server.playing < server.maxPlayers and server.id ~= game.JobId then
-                table.insert(candidates, server.id)
-            end
-        end
-        
-        if #candidates > 0 then
-            local targetId = candidates[math.random(1, #candidates)]
-            TeleportService:TeleportToPlaceInstance(GAME_ID, targetId, LocalPlayer)
-        else
-            ManagerStatus.Text = "Retrying hop..."
-            isHopping = false
-        end
-    else
-        ManagerStatus.Text = "Standard Teleport..."
-        TeleportService:Teleport(GAME_ID, LocalPlayer)
-    end
-end
-
--- TIMER RESET LOGIC
-local function resetTimer()
-    timeLeft = TIME_LIMIT_MINUTES * 60
-    
-    local originalColor = ManagerFrame.BackgroundColor3
-    ManagerFrame.BackgroundColor3 = Color3.fromRGB(0, 100, 50)
-    ManagerStatus.Text = "DONATION DETECTED!"
-    ManagerStatus.TextColor3 = Color3.fromRGB(0, 255, 150)
-    
-    task.delay(1.5, function()
-        ManagerFrame.BackgroundColor3 = originalColor
-        ManagerStatus.Text = "Watching: @" .. TARGET_USER
-        ManagerStatus.TextColor3 = Color3.fromRGB(100, 100, 100)
-    end)
-end
-
--- CHAT SCANNER
-local function processChat(msg)
-    local lowerMsg = msg:lower()
-    if not lowerMsg:find(TARGET_USER) then return end
-    if lowerMsg:find("donated") or lowerMsg:find("tipped") then
-        if lowerMsg:find("%d") then
-            resetTimer()
-        end
-    end
-end
-
-if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
-    TextChatService.MessageReceived:Connect(function(data) processChat(data.Text) end)
-else
-    local ChatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
-    if ChatEvents then
-        local OnMessage = ChatEvents:FindFirstChild("OnMessageDoneFiltering")
-        if OnMessage then
-            OnMessage.OnClientEvent:Connect(function(data)
-                if data and data.Message then processChat(data.Message) end
-            end)
-        end
-    end
-end
-
--- TIMER LOOP
-task.spawn(function()
-    while true do
-        if not isHopping then
-            timeLeft = timeLeft - 1
-            local minutes = math.floor(timeLeft / 60)
-            local seconds = timeLeft % 60
-            TimerLabel.Text = string.format("%02d:%02d", minutes, seconds)
-            
-            if timeLeft < 60 then TimerLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
-            elseif timeLeft < 300 then TimerLabel.TextColor3 = Color3.fromRGB(255, 170, 0)
-            else TimerLabel.TextColor3 = Color3.fromRGB(255, 255, 255) end
-            
-            if timeLeft <= 0 then serverHop() end
-        end
-        task.wait(1)
-    end
-end)
-
---------------------------------------------------------------------------------
--- PART 2: ZONE CLAIMER GUI & LOGIC
---------------------------------------------------------------------------------
-
-local ClaimerGui = Instance.new("ScreenGui")
-ClaimerGui.Name = "AutoBoothZone"
-ClaimerGui.ResetOnSpawn = false
-ClaimerGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ClaimerGui.Parent = PlayerGui
+pcall(function() ScreenGui.Parent = CoreGui end)
+if not ScreenGui.Parent then ScreenGui.Parent = PlayerGui end
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 MainFrame.BorderSizePixel = 0
-MainFrame.Position = UDim2.new(0.5, -140, 0.5, -130)
-MainFrame.Size = UDim2.new(0, 280, 0, 260)
-MainFrame.Parent = ClaimerGui
+MainFrame.Position = UDim2.new(0.5, -130, 0.5, -140)
+MainFrame.Size = UDim2.new(0, 260, 0, 280)
+MainFrame.Parent = ScreenGui
 
 local UICorner = Instance.new("UICorner")
-UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.CornerRadius = UDim.new(0, 10)
 UICorner.Parent = MainFrame
 
 local UIStroke = Instance.new("UIStroke")
-UIStroke.Color = Color3.fromRGB(60, 60, 60)
+UIStroke.Color = Color3.fromRGB(50, 50, 50)
 UIStroke.Thickness = 2
 UIStroke.Parent = MainFrame
 
-local Title = Instance.new("TextLabel")
-Title.BackgroundTransparency = 1
-Title.Size = UDim2.new(1, 0, 0, 30)
-Title.Font = Enum.Font.GothamBold
-Title.Text = "ZONE CLAIMER"
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.TextSize = 16
-Title.Parent = MainFrame
+-- Header
+local HeaderLabel = Instance.new("TextLabel")
+HeaderLabel.BackgroundTransparency = 1
+HeaderLabel.Size = UDim2.new(1, 0, 0, 40)
+HeaderLabel.Font = Enum.Font.GothamBold
+HeaderLabel.Text = "SPIN BOT V4 (DEBUG)"
+HeaderLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+HeaderLabel.TextSize = 16
+HeaderLabel.Parent = MainFrame
 
-local StatusLabel = Instance.new("TextLabel")
-StatusLabel.BackgroundTransparency = 1
-StatusLabel.Position = UDim2.new(0, 0, 0.15, 0)
-StatusLabel.Size = UDim2.new(1, 0, 0, 25)
-StatusLabel.Font = Enum.Font.GothamBold
-StatusLabel.Text = "SCANNING ZONE..."
-StatusLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
-StatusLabel.TextSize = 14
-StatusLabel.Parent = MainFrame
+-- Divider
+local Divider = Instance.new("Frame")
+Divider.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+Divider.BorderSizePixel = 0
+Divider.Position = UDim2.new(0, 20, 0, 45)
+Divider.Size = UDim2.new(1, -40, 0, 1)
+Divider.Parent = MainFrame
 
-local DebugLabel = Instance.new("TextLabel")
-DebugLabel.BackgroundTransparency = 1
-DebugLabel.Position = UDim2.new(0, 10, 0.35, 0)
-DebugLabel.Size = UDim2.new(1, -20, 0, 50)
-DebugLabel.Font = Enum.Font.Code
-DebugLabel.Text = "Initializing..."
-DebugLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
-DebugLabel.TextSize = 11
-DebugLabel.TextWrapped = true
-DebugLabel.TextYAlignment = Enum.TextYAlignment.Top
-DebugLabel.Parent = MainFrame
+-- Status Monitor
+local MonitorLabel = Instance.new("TextLabel")
+MonitorLabel.BackgroundTransparency = 1
+MonitorLabel.Position = UDim2.new(0, 0, 0.2, 0)
+MonitorLabel.Size = UDim2.new(1, 0, 0, 20)
+MonitorLabel.Font = Enum.Font.Gotham
+MonitorLabel.Text = "Watching: @" .. TARGET_USER
+MonitorLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+MonitorLabel.TextSize = 12
+MonitorLabel.Parent = MainFrame
 
-local StopBtn = Instance.new("TextButton")
-StopBtn.BackgroundColor3 = Color3.fromRGB(170, 50, 50)
-StopBtn.Position = UDim2.new(0.1, 0, 0.8, 0)
-StopBtn.Size = UDim2.new(0.8, 0, 0, 35)
-StopBtn.Font = Enum.Font.GothamBold
-StopBtn.Text = "STOP SEARCH"
-StopBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-StopBtn.Parent = MainFrame
-Instance.new("UICorner", StopBtn).CornerRadius = UDim.new(0, 6)
+-- Speed Input
+local InputLabel = Instance.new("TextLabel")
+InputLabel.BackgroundTransparency = 1
+InputLabel.Position = UDim2.new(0.1, 0, 0.32, 0)
+InputLabel.Size = UDim2.new(0.8, 0, 0, 20)
+InputLabel.Font = Enum.Font.GothamMedium
+InputLabel.Text = "Base Speed (Manual)"
+InputLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+InputLabel.TextXAlignment = Enum.TextXAlignment.Left
+InputLabel.TextSize = 12
+InputLabel.Parent = MainFrame
+
+local SpeedInput = Instance.new("TextBox")
+SpeedInput.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+SpeedInput.Position = UDim2.new(0.1, 0, 0.4, 0)
+SpeedInput.Size = UDim2.new(0.8, 0, 0, 35)
+SpeedInput.Font = Enum.Font.GothamBold
+SpeedInput.Text = "20"
+SpeedInput.TextColor3 = Color3.fromRGB(0, 255, 150)
+SpeedInput.TextSize = 18
+SpeedInput.Parent = MainFrame
+Instance.new("UICorner", SpeedInput).CornerRadius = UDim.new(0, 6)
+
+-- Total Speed Display
+local TotalDisplay = Instance.new("TextLabel")
+TotalDisplay.BackgroundTransparency = 1
+TotalDisplay.Position = UDim2.new(0, 0, 0.58, 0)
+TotalDisplay.Size = UDim2.new(1, 0, 0, 40)
+TotalDisplay.Font = Enum.Font.GothamBold
+TotalDisplay.Text = "TOTAL SPEED: 20"
+TotalDisplay.TextColor3 = Color3.fromRGB(255, 200, 50)
+TotalDisplay.TextSize = 20
+TotalDisplay.Parent = MainFrame
+
+-- Reset Button
+local ResetBtn = Instance.new("TextButton")
+ResetBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+ResetBtn.Position = UDim2.new(0.1, 0, 0.8, 0)
+ResetBtn.Size = UDim2.new(0.8, 0, 0, 35)
+ResetBtn.Font = Enum.Font.GothamBold
+ResetBtn.Text = "RESET SPEED"
+ResetBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ResetBtn.Parent = MainFrame
+Instance.new("UICorner", ResetBtn).CornerRadius = UDim.new(0, 6)
 
 --------------------------------------------------------------------------------
--- CLAIMER LOGIC
+-- LOGIC FUNCTIONS
 --------------------------------------------------------------------------------
 
-local function executePayloads()
-    StatusLabel.Text = "EXECUTING SCRIPTS..."
-    DebugLabel.Text = "Loading external scripts..."
-    
-    task.spawn(function()
-        pcall(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/theoeggdog/auto-chat/refs/heads/main/hardcoded-chat"))() end)
-    end)
-    task.wait(0.2)
-    task.spawn(function()
-        pcall(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/theoeggdog/auto-chat/refs/heads/main/script1"))() end)
-    end)
-    task.wait(0.2)
-    task.spawn(function()
-        pcall(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/theoeggdog/auto-chat/refs/heads/main/script2"))() end)
-    end)
-end
-
-local function onSuccess()
-    boothFound = true
-    isSearching = false
-    
-    StatusLabel.Text = "CLAIMED!"
-    StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
-    
-    executePayloads()
-    
-    DebugLabel.Text = "Success! Hiding Claimer UI..."
-    task.delay(1.5, function()
-        -- WE ONLY DESTROY THE CLAIMER GUI. 
-        -- THE SCRIPT AND MANAGER GUI STAY ALIVE.
-        if ClaimerGui then ClaimerGui:Destroy() end
-    end)
-end
-
-LogService.MessageOut:Connect(function(message, messageType)
-    if isSearching and string.find(message, "YourBooth") then
-        onSuccess()
+local function updateDisplay()
+    local total = baseSpeed + bonusSpeed
+    TotalDisplay.Text = "TOTAL SPEED: " .. math.floor(total)
+    if not SpeedInput:IsFocused() then
+        SpeedInput.Text = tostring(baseSpeed)
     end
-end)
-
-local function getSafeTeleportCFrame(model)
-    if model.PrimaryPart then return model.PrimaryPart.CFrame * CFrame.new(0, 0, -3.5) end
-    local pivot = model:GetPivot()
-    if pivot then return pivot * CFrame.new(0, 0, -3.5) end
-    local part = model:FindFirstChildWhichIsA("BasePart", true)
-    if part then return part.CFrame * CFrame.new(0, 0, -3.5) end
-    return nil
 end
 
-local function isInZone(cframe)
-    if not cframe then return false end
-    local x = cframe.Position.X
-    local z = cframe.Position.Z
-    if x >= ZONE_MIN_X and x <= ZONE_MAX_X and z >= ZONE_MIN_Z and z <= ZONE_MAX_Z then
-        return true
-    end
-    return false
-end
-
-local function simulateKeyPress(duration)
-    if not isSearching then return end
-    StatusLabel.Text = "PRESSING E..."
-    
-    pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game) end)
-
-    local elapsed = 0
-    while elapsed < duration do
-        if not isSearching then break end
-        task.wait(0.1)
-        elapsed = elapsed + 0.1
-    end
-
-    pcall(function() VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game) end)
-end
-
-StopBtn.MouseButton1Click:Connect(function()
-    isSearching = not isSearching
-    StopBtn.Text = isSearching and "STOP SEARCH" or "RESUME SEARCH"
-    StopBtn.BackgroundColor3 = isSearching and Color3.fromRGB(170, 50, 50) or Color3.fromRGB(0, 170, 100)
-end)
-
--- MAIN CLAIMER LOOP
-task.spawn(function()
-    while true do
-        if not isSearching or boothFound then
-            if boothFound then break end 
-            task.wait(0.5)
-            continue
+local function performJump()
+    task.spawn(function()
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChild("Humanoid")
+        if hum then
+            local jumpCount = math.random(1, 2)
+            for i = 1, jumpCount do
+                hum.Jump = true
+                task.wait(0.6)
+            end
         end
+    end)
+end
 
-        local folder = Workspace:FindFirstChild("BoothModels")
-        if folder then
-            local children = folder:GetChildren()
-            local validBooths = {}
-            
-            for _,v in pairs(children) do
-                if v.Name == "BasicBooth" then
-                    local targetCF = getSafeTeleportCFrame(v)
-                    if isInZone(targetCF) then
-                        table.insert(validBooths, {model = v, cf = targetCF})
-                    end
-                end
-            end
+local function handleDonation(amount)
+    -- Math: Speed += (Amount / 2)
+    local speedAdd = amount / 2
+    bonusSpeed = bonusSpeed + speedAdd
+    updateDisplay()
+    
+    print(">> [SPIN BOT] MATCHED! Added " .. speedAdd .. " speed from " .. amount .. " Robux.")
+    
+    MonitorLabel.Text = "Detected: " .. amount .. " Robux!"
+    MonitorLabel.TextColor3 = Color3.fromRGB(0, 255, 255)
+    
+    performJump()
+    
+    task.delay(2, function()
+        MonitorLabel.Text = "Watching: @" .. TARGET_USER
+        MonitorLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+    end)
+end
 
-            if #validBooths > 0 then
-                local selection = validBooths[math.random(1, #validBooths)]
-                local randomBooth = selection.model
-                local targetCFrame = selection.cf
+--------------------------------------------------------------------------------
+-- CHAT SCANNER (ADVANCED PARSER)
+--------------------------------------------------------------------------------
 
-                local char = LocalPlayer.Character
-                local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                
-                if hrp then
-                    StatusLabel.Text = "TP: " .. randomBooth.Name
-                    DebugLabel.Text = "Moved to valid zone booth..."
-                    
-                    hrp.CFrame = targetCFrame
-                    hrp.Velocity = Vector3.zero
-                    task.wait(0.5)
-                    
-                    local currentY = hrp.Position.Y
-                    if currentY < 2 or currentY > 15 then
-                        DebugLabel.Text = "Skipped: Bad Elevation (" .. math.floor(currentY) .. ")"
-                        task.wait(0.2)
-                    else
-                        local prompt = randomBooth:FindFirstChildWhichIsA("ProximityPrompt", true)
-                        if prompt then prompt:InputHoldBegin() end
-                        
-                        simulateKeyPress(HOLD_DURATION)
-                        
-                        if prompt then prompt:InputHoldEnd() end
-                        StatusLabel.Text = "Checking Logs..."
-                        task.wait(SEARCH_DELAY)
-                    end
-                end
-            else
-                StatusLabel.Text = "No Booths in Zone"
-                DebugLabel.Text = "Waiting for booths in X:70-260 Z:210-400"
-                task.wait(2)
-            end
+local function processChat(message)
+    -- Debug: See what the script sees
+    -- print(">> Scanned: " .. message) 
+    
+    local lowerMsg = message:lower()
+    
+    -- 1. Username Check (Strict)
+    if not lowerMsg:find(TARGET_USER) then return end
+    
+    -- 2. Keyword Check
+    if not (lowerMsg:find("tipped") or lowerMsg:find("donated")) then return end
+
+    -- 3. REMOVE USERNAME to prevent catching the '2'
+    local cleanMsg = lowerMsg:gsub(TARGET_USER, "") 
+    
+    -- 4. CLEANUP (Remove tags <br>, remove commas 1,000)
+    cleanMsg = cleanMsg:gsub("<[^>]+>", " ") -- Replace tags with space
+    cleanMsg = cleanMsg:gsub(",", "")        -- Remove commas
+    
+    -- 5. FIND NUMBERS
+    -- We look for any digit sequence
+    for amountString in cleanMsg:gmatch("%d+") do
+        local amount = tonumber(amountString)
+        
+        -- Logic: If it's a valid number and NOT '2' (extra safety), use it.
+        -- In most "tipped 5" messages, 5 is the only number left after name removal.
+        if amount and amount > 0 then
+             -- Safety check: Avoid extremely small numbers that might be IDs if any remain
+             -- But usually donations are the only numbers left.
+             handleDonation(amount)
+             break -- Stop after finding the first valid donation amount
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
+-- EVENT LISTENERS (OMNI-CHANNEL)
+--------------------------------------------------------------------------------
+
+-- 1. New TextChatService (Incoming Message - Catches System Msgs)
+if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+    TextChatService.OnIncomingMessage = function(message)
+        if message.TextSource then
+            processChat(message.Text)
         else
-            DebugLabel.Text = "Waiting for workspace..."
-            task.wait(1)
+            -- System messages often have no TextSource
+            processChat(message.Text)
         end
-        task.wait(0.2)
+    end
+end
+
+-- 2. New TextChatService (Standard Received)
+TextChatService.MessageReceived:Connect(function(data)
+    processChat(data.Text)
+end)
+
+-- 3. Legacy Chat (Old System / ReplicatedStorage)
+local ChatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+if ChatEvents then
+    local OnMessage = ChatEvents:FindFirstChild("OnMessageDoneFiltering")
+    if OnMessage then
+        OnMessage.OnClientEvent:Connect(function(data)
+            if data and data.Message then processChat(data.Message) end
+        end)
+    end
+end
+
+--------------------------------------------------------------------------------
+-- INPUTS & LOOPS
+--------------------------------------------------------------------------------
+
+SpeedInput.FocusLost:Connect(function()
+    local num = tonumber(SpeedInput.Text)
+    if num then baseSpeed = num else baseSpeed = 20 end
+    updateDisplay()
+end)
+
+ResetBtn.MouseButton1Click:Connect(function()
+    bonusSpeed = 0
+    baseSpeed = 20
+    updateDisplay()
+end)
+
+RunService.RenderStepped:Connect(function()
+    if isSpinning and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local hrp = LocalPlayer.Character.HumanoidRootPart
+        local currentTotal = baseSpeed + bonusSpeed
+        if currentTotal ~= 0 then
+            hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(currentTotal), 0)
+        end
     end
 end)
 
--- CLEANUP & UI DRAGGING
-local function enableDragging(frame)
-    local dragging, dragInput, dragStart, startPos
-    local function update(input)
-        local delta = input.Position - dragStart
-        frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-    frame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = frame.Position
-            input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
-        end
-    end)
-    frame.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
-    end)
-    UserInputService.InputChanged:Connect(function(input) if input == dragInput and dragging then update(input) end end)
+-- UI Dragging
+local dragging, dragInput, dragStart, startPos
+local function update(input)
+    local delta = input.Position - dragStart
+    MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
 end
-enableDragging(MainFrame)
+MainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+    end
+end)
+MainFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
+end)
+UserInputService.InputChanged:Connect(function(input) if input == dragInput and dragging then update(input) end end)
 
 UserInputService.InputBegan:Connect(function(input)
-    if input.KeyCode == Enum.KeyCode.RightControl then 
-        if MainFrame then MainFrame.Visible = not MainFrame.Visible end
-    end
+    if input.KeyCode == UI_TOGGLE_KEY then MainFrame.Visible = not MainFrame.Visible end
 end)
 
-script.Destroying:Connect(function()
-    isSearching = false
-    pcall(function() VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game) end)
-    if ClaimerGui then ClaimerGui:Destroy() end
-    if ManagerGui then ManagerGui:Destroy() end
-end)
+script.Destroying:Connect(function() isSpinning = false; ScreenGui:Destroy() end)
