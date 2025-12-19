@@ -183,7 +183,11 @@ end)
 
 Btn3.MouseButton1Click:Connect(function() bonusSpeed += 3; updateDisplay() end)
 Btn5.MouseButton1Click:Connect(function() bonusSpeed += 5; updateDisplay() end)
-ResetBtn.MouseButton1Click:Connect(function() bonusSpeed = 0; baseSpeed = 1; updateDisplay() end)
+ResetBtn.MouseButton1Click:Connect(function()
+    bonusSpeed = 0
+    baseSpeed = 20
+    updateDisplay()
+end)
 
 -- Spin Loop
 RunService.RenderStepped:Connect(function()
