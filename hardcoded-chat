@@ -30,7 +30,7 @@ local PHRASES = {
     "please i need this",
     "pls donate",
     "1+ robux = 1+ spin speed!"
-}
+    }
 
 -- STATE
 local isRunning = false
