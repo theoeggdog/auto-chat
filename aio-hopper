@@ -1,9 +1,8 @@
 --[[ 
-    FINAL BOOTH CLAIMER (ZONE RESTRICTED EDITION)
-    - Checks X/Z Bounds (70-260, 210-400) BEFORE teleporting
-    - Checks Y-Level (Height) AFTER teleporting (Anti-Void)
-    - Blind Simulates 'E' -> Checks Logs -> Executes Payloads
-    - Client-Side Only
+    AIO HOPPER: ZONE CLAIMER + SERVER MANAGER
+    - Part 1: Zone Restricted Booth Claimer (X:70-260, Z:210-400)
+    - Part 2: Server Manager (15m Timer, Chat Reset, Auto-Hop)
+    - Fully Autonomous Cycle
 ]]
 
 local Players = game:GetService("Players")
@@ -11,37 +10,197 @@ local Workspace = game:GetService("Workspace")
 local LogService = game:GetService("LogService")
 local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+local TextChatService = game:GetService("TextChatService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CoreGui = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- Configuration
-local SEARCH_DELAY = 1         -- Time to check logs after attempt
-local HOLD_DURATION = 3.5      -- How long to hold 'E'
-local UI_TOGGLE_KEY = Enum.KeyCode.RightControl
+--------------------------------------------------------------------------------
+-- CONFIGURATION
+--------------------------------------------------------------------------------
+-- Server Manager Config
+local GAME_ID = 8737602449
+local TIME_LIMIT_MINUTES = 15
+local TARGET_USER = "theosbot_2"
 
--- ZONE BOUNDARIES (Derived from your coords)
--- X: 70 to 260
--- Z: 210 to 400
+-- Zone Claimer Config
+local SEARCH_DELAY = 1         
+local HOLD_DURATION = 3.5      
 local ZONE_MIN_X = 70
 local ZONE_MAX_X = 260
 local ZONE_MIN_Z = 210
 local ZONE_MAX_Z = 400
 
--- State
+-- State Variables
 local isSearching = true
 local boothFound = false
+local timeLeft = TIME_LIMIT_MINUTES * 60
+local isHopping = false
 
 --------------------------------------------------------------------------------
--- GUI CREATION
+-- PART 1: SERVER MANAGER UI & LOGIC
 --------------------------------------------------------------------------------
 
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "AutoBoothZone"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.Parent = PlayerGui
+local ManagerGui = Instance.new("ScreenGui")
+ManagerGui.Name = "ServerManagerGUI"
+ManagerGui.ResetOnSpawn = false
+ManagerGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+pcall(function() ManagerGui.Parent = CoreGui end)
+if not ManagerGui.Parent then ManagerGui.Parent = PlayerGui end
+
+local ManagerFrame = Instance.new("Frame")
+ManagerFrame.Name = "ManagerFrame"
+ManagerFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+ManagerFrame.BorderSizePixel = 0
+ManagerFrame.Position = UDim2.new(1, -220, 1, -100) -- Bottom Right
+ManagerFrame.Size = UDim2.new(0, 200, 0, 80)
+ManagerFrame.Parent = ManagerGui
+
+local ManagerCorner = Instance.new("UICorner")
+ManagerCorner.CornerRadius = UDim.new(0, 8)
+ManagerCorner.Parent = ManagerFrame
+
+local ManagerStroke = Instance.new("UIStroke")
+ManagerStroke.Color = Color3.fromRGB(60, 60, 60)
+ManagerStroke.Thickness = 2
+ManagerStroke.Parent = ManagerFrame
+
+local ManagerTitle = Instance.new("TextLabel")
+ManagerTitle.BackgroundTransparency = 1
+ManagerTitle.Position = UDim2.new(0, 0, 0, 5)
+ManagerTitle.Size = UDim2.new(1, 0, 0, 20)
+ManagerTitle.Font = Enum.Font.GothamBold
+ManagerTitle.Text = "SERVER MANAGER"
+ManagerTitle.TextColor3 = Color3.fromRGB(150, 150, 150)
+ManagerTitle.TextSize = 12
+ManagerTitle.Parent = ManagerFrame
+
+local TimerLabel = Instance.new("TextLabel")
+TimerLabel.BackgroundTransparency = 1
+TimerLabel.Position = UDim2.new(0, 0, 0.35, 0)
+TimerLabel.Size = UDim2.new(1, 0, 0, 30)
+TimerLabel.Font = Enum.Font.GothamBold
+TimerLabel.Text = "15:00"
+TimerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TimerLabel.TextSize = 24
+TimerLabel.Parent = ManagerFrame
+
+local ManagerStatus = Instance.new("TextLabel")
+ManagerStatus.BackgroundTransparency = 1
+ManagerStatus.Position = UDim2.new(0, 0, 0.7, 0)
+ManagerStatus.Size = UDim2.new(1, 0, 0, 20)
+ManagerStatus.Font = Enum.Font.Gotham
+ManagerStatus.Text = "Watching: @" .. TARGET_USER
+ManagerStatus.TextColor3 = Color3.fromRGB(100, 100, 100)
+ManagerStatus.TextSize = 11
+ManagerStatus.Parent = ManagerFrame
+
+-- HOP LOGIC
+local function serverHop()
+    if isHopping then return end
+    isHopping = true
+    
+    ManagerStatus.Text = "HOPPING SERVERS..."
+    ManagerStatus.TextColor3 = Color3.fromRGB(255, 50, 50)
+    
+    local success, result = pcall(function()
+        return HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/".. GAME_ID .."/servers/Public?sortOrder=Desc&limit=100"))
+    end)
+    
+    if success and result and result.data then
+        local candidates = {}
+        for _, server in pairs(result.data) do
+            if server.playing < server.maxPlayers and server.id ~= game.JobId then
+                table.insert(candidates, server.id)
+            end
+        end
+        
+        if #candidates > 0 then
+            local targetId = candidates[math.random(1, #candidates)]
+            TeleportService:TeleportToPlaceInstance(GAME_ID, targetId, LocalPlayer)
+        else
+            ManagerStatus.Text = "Retrying hop..."
+            isHopping = false
+        end
+    else
+        ManagerStatus.Text = "Standard Teleport..."
+        TeleportService:Teleport(GAME_ID, LocalPlayer)
+    end
+end
+
+-- TIMER RESET LOGIC
+local function resetTimer()
+    timeLeft = TIME_LIMIT_MINUTES * 60
+    
+    local originalColor = ManagerFrame.BackgroundColor3
+    ManagerFrame.BackgroundColor3 = Color3.fromRGB(0, 100, 50)
+    ManagerStatus.Text = "DONATION DETECTED!"
+    ManagerStatus.TextColor3 = Color3.fromRGB(0, 255, 150)
+    
+    task.delay(1.5, function()
+        ManagerFrame.BackgroundColor3 = originalColor
+        ManagerStatus.Text = "Watching: @" .. TARGET_USER
+        ManagerStatus.TextColor3 = Color3.fromRGB(100, 100, 100)
+    end)
+end
+
+-- CHAT SCANNER
+local function processChat(msg)
+    local lowerMsg = msg:lower()
+    if not lowerMsg:find(TARGET_USER) then return end
+    if lowerMsg:find("donated") or lowerMsg:find("tipped") then
+        if lowerMsg:find("%d") then
+            resetTimer()
+        end
+    end
+end
+
+if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+    TextChatService.MessageReceived:Connect(function(data) processChat(data.Text) end)
+else
+    local ChatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+    if ChatEvents then
+        local OnMessage = ChatEvents:FindFirstChild("OnMessageDoneFiltering")
+        if OnMessage then
+            OnMessage.OnClientEvent:Connect(function(data)
+                if data and data.Message then processChat(data.Message) end
+            end)
+        end
+    end
+end
+
+-- TIMER LOOP
+task.spawn(function()
+    while true do
+        if not isHopping then
+            timeLeft = timeLeft - 1
+            local minutes = math.floor(timeLeft / 60)
+            local seconds = timeLeft % 60
+            TimerLabel.Text = string.format("%02d:%02d", minutes, seconds)
+            
+            if timeLeft < 60 then TimerLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+            elseif timeLeft < 300 then TimerLabel.TextColor3 = Color3.fromRGB(255, 170, 0)
+            else TimerLabel.TextColor3 = Color3.fromRGB(255, 255, 255) end
+            
+            if timeLeft <= 0 then serverHop() end
+        end
+        task.wait(1)
+    end
+end)
+
+--------------------------------------------------------------------------------
+-- PART 2: ZONE CLAIMER GUI & LOGIC
+--------------------------------------------------------------------------------
+
+local ClaimerGui = Instance.new("ScreenGui")
+ClaimerGui.Name = "AutoBoothZone"
+ClaimerGui.ResetOnSpawn = false
+ClaimerGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ClaimerGui.Parent = PlayerGui
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
@@ -49,7 +208,7 @@ MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 MainFrame.BorderSizePixel = 0
 MainFrame.Position = UDim2.new(0.5, -140, 0.5, -130)
 MainFrame.Size = UDim2.new(0, 280, 0, 260)
-MainFrame.Parent = ScreenGui
+MainFrame.Parent = ClaimerGui
 
 local UICorner = Instance.new("UICorner")
 UICorner.CornerRadius = UDim.new(0, 8)
@@ -102,28 +261,7 @@ StopBtn.Parent = MainFrame
 Instance.new("UICorner", StopBtn).CornerRadius = UDim.new(0, 6)
 
 --------------------------------------------------------------------------------
--- DRAGGABLE LOGIC
---------------------------------------------------------------------------------
-local dragging, dragInput, dragStart, startPos
-local function update(input)
-    local delta = input.Position - dragStart
-    MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-end
-MainFrame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = MainFrame.Position
-        input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
-    end
-end)
-MainFrame.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
-end)
-UserInputService.InputChanged:Connect(function(input) if input == dragInput and dragging then update(input) end end)
-
---------------------------------------------------------------------------------
--- PAYLOAD & SUCCESS
+-- CLAIMER LOGIC
 --------------------------------------------------------------------------------
 
 local function executePayloads()
@@ -152,9 +290,11 @@ local function onSuccess()
     
     executePayloads()
     
-    DebugLabel.Text = "Success! Unloading UI..."
+    DebugLabel.Text = "Success! Hiding Claimer UI..."
     task.delay(1.5, function()
-        if ScreenGui then ScreenGui:Destroy() end
+        -- WE ONLY DESTROY THE CLAIMER GUI. 
+        -- THE SCRIPT AND MANAGER GUI STAY ALIVE.
+        if ClaimerGui then ClaimerGui:Destroy() end
     end)
 end
 
@@ -163,10 +303,6 @@ LogService.MessageOut:Connect(function(message, messageType)
         onSuccess()
     end
 end)
-
---------------------------------------------------------------------------------
--- SEARCH LOGIC WITH BOUNDARY CHECKS
---------------------------------------------------------------------------------
 
 local function getSafeTeleportCFrame(model)
     if model.PrimaryPart then return model.PrimaryPart.CFrame * CFrame.new(0, 0, -3.5) end
@@ -181,8 +317,6 @@ local function isInZone(cframe)
     if not cframe then return false end
     local x = cframe.Position.X
     local z = cframe.Position.Z
-    
-    -- Check if X is within 70-260 AND Z is within 210-400
     if x >= ZONE_MIN_X and x <= ZONE_MAX_X and z >= ZONE_MIN_Z and z <= ZONE_MAX_Z then
         return true
     end
@@ -211,7 +345,7 @@ StopBtn.MouseButton1Click:Connect(function()
     StopBtn.BackgroundColor3 = isSearching and Color3.fromRGB(170, 50, 50) or Color3.fromRGB(0, 170, 100)
 end)
 
--- MAIN LOOP
+-- MAIN CLAIMER LOOP
 task.spawn(function()
     while true do
         if not isSearching or boothFound then
@@ -225,7 +359,6 @@ task.spawn(function()
             local children = folder:GetChildren()
             local validBooths = {}
             
-            -- Filter Booths by Zone BEFORE selecting
             for _,v in pairs(children) do
                 if v.Name == "BasicBooth" then
                     local targetCF = getSafeTeleportCFrame(v)
@@ -236,7 +369,6 @@ task.spawn(function()
             end
 
             if #validBooths > 0 then
-                -- Pick Random Valid Booth
                 local selection = validBooths[math.random(1, #validBooths)]
                 local randomBooth = selection.model
                 local targetCFrame = selection.cf
@@ -246,20 +378,17 @@ task.spawn(function()
                 
                 if hrp then
                     StatusLabel.Text = "TP: " .. randomBooth.Name
-                    DebugLabel.Text = "Moved to valid booth in zone..."
+                    DebugLabel.Text = "Moved to valid zone booth..."
                     
-                    -- 1. Teleport
                     hrp.CFrame = targetCFrame
                     hrp.Velocity = Vector3.zero
                     task.wait(0.5)
                     
-                    -- 2. Elevation Check (Anti-Void)
                     local currentY = hrp.Position.Y
                     if currentY < 2 or currentY > 15 then
                         DebugLabel.Text = "Skipped: Bad Elevation (" .. math.floor(currentY) .. ")"
                         task.wait(0.2)
                     else
-                        -- 3. Claim Sequence
                         local prompt = randomBooth:FindFirstChildWhichIsA("ProximityPrompt", true)
                         if prompt then prompt:InputHoldBegin() end
                         
@@ -283,15 +412,37 @@ task.spawn(function()
     end
 end)
 
---------------------------------------------------------------------------------
--- CLEANUP
---------------------------------------------------------------------------------
+-- CLEANUP & UI DRAGGING
+local function enableDragging(frame)
+    local dragging, dragInput, dragStart, startPos
+    local function update(input)
+        local delta = input.Position - dragStart
+        frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+            input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+        end
+    end)
+    frame.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
+    end)
+    UserInputService.InputChanged:Connect(function(input) if input == dragInput and dragging then update(input) end end)
+end
+enableDragging(MainFrame)
+
 UserInputService.InputBegan:Connect(function(input)
-    if input.KeyCode == UI_TOGGLE_KEY and MainFrame then MainFrame.Visible = not MainFrame.Visible end
+    if input.KeyCode == Enum.KeyCode.RightControl then 
+        if MainFrame then MainFrame.Visible = not MainFrame.Visible end
+    end
 end)
 
 script.Destroying:Connect(function()
     isSearching = false
     pcall(function() VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game) end)
-    if ScreenGui then ScreenGui:Destroy() end
+    if ClaimerGui then ClaimerGui:Destroy() end
+    if ManagerGui then ManagerGui:Destroy() end
 end)
